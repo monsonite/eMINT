@@ -1,4 +1,4 @@
-### <a name='list-of-operators'></a>List of operators
+### <a name='list-of-MINT-operators'></a>List of MINT operators
 
 | Symbol | Description                               | Effect       |	Symbol | Description                               | Effect       |
 | ------ | ----------------------------------------- | ------------ |	------ | ----------------------------------------- | ------------ |
