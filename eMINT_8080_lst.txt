@@ -1,0 +1,376 @@
+0000                          .ORG   $00   
+0000                             ; 
+0000                             ;	RELEASE & VERSION NUMBERS
+0000                             ; 
+0000                FIGREL:   EQU   1   ; FIG RELEASE #
+0000                FIGREV:   EQU   1   ; FIG REVISION #
+0000                USRVER:   EQU   0   ; USER VERSION #
+0000                             ; 
+0000                             ;	ASCII CHARACTERS USED
+0000                             ; 
+0000                ABL:      EQU   20H   ; SPACE
+0000                ACR:      EQU   0DH   ; CARRIAGE RETURN
+0000                ADOT:     EQU   02EH   ; PERIOD
+0000                BELL:     EQU   07H   ; (^G)
+0000                BSIN:     EQU   7FH   ; INPUT BACKSPACE CHR = RUBOUT
+0000                BSOUT:    EQU   08H   ; OUTPUT BACKSPACE (^H)
+0000                DLE:      EQU   10H   ; (^P)
+0000                LF:       EQU   0AH   ; LINE FEED
+0000                FF:       EQU   0CH   ; FORM FEED (^L)
+0000                             ; 
+0000                             ;	MEMORY ALLOCATION
+0000                             ; 
+0000                EM:       EQU   4000H   ; TOP OF MEMORY + 1 = LIMIT
+0000                NSCR:     EQU   1   ; NUMBER OF 1024 BYTE SCREENS
+0000                KBBUF:    EQU   128   ; DATA BYTES PER DISK BUFFER
+0000                US:       EQU   40H   ; USER VARIABLES SPACE
+0000                RTS:      EQU   0A0H   ; RETURN STACK & TERM BUFF SPACE
+0000                             ; 
+0000                CO:       EQU   KBBUF+4   ; DISK BUFFER + 2 HEADER + 2 TAIL
+0000                NBUF:     EQU   NSCR*400H/KBBUF   ; NUMBER OF BUFFERS
+0000                BUF1:     EQU   EM-CO*NBUF   ; ADDR FIRST DISK BUFFER
+0000                INITR0:   EQU   BUF1-US   ; (R0)
+0000                INITS0:   EQU   INITR0-RTS   ; (S0)
+0000                             ; 
+0000   00 3B                  DW   INITS0   ; INIT (S0)
+0002   A0 3B                  DW   INITR0   ; INIT (R0)
+0004                             ; 
+0004   A0 3B        UP:       DW   INITR0   ; USER AREA POINTER
+0006   A0 3B        RPP:      DW   INITR0   ; RETURN STACK POINTER
+0008                             ;	MUST BE IN SAME ORDER AS USER VARIABLES
+0008                             ; 
+0008                             ; 
+0008   00                     NOP      
+0009   00                     NOP      
+000A   00                     NOP      
+000B   00                     NOP      
+000C   00                     NOP      
+000D   00                     NOP      
+000E   00                     NOP      
+000F   00                     NOP      
+0010                             ; 
+0010                             ; 
+0010                             ;--------------------------------------------------
+0010                             ; 
+0010                             ;	NEXT, THE FORTH ADDRESS INTERPRETER
+0010                             ;	  ( POST INCREMENTING VERSION )
+0010                             ; 
+0010   D5           DPUSH:    PUSH   D   
+0011   00                     NOP      
+0012   00                     NOP      
+0013   00                     NOP      
+0014   00                     NOP      
+0015   00                     NOP      
+0016   00                     NOP      
+0017   00                     NOP      
+0018   E5           HPUSH:    PUSH   H   
+0019   00                     NOP      
+001A   00                     NOP      
+001B   00                     NOP      
+001C   00                     NOP      
+001D   00                     NOP      
+001E   00                     NOP      
+001F   00                     NOP      
+0020                             ; 
+0020                             ; 
+0020   0A           NEXT:     LDAX   B   ;(W) <- ((IP))
+0021   03                     INX   B   ;(IP) <- (IP)+2
+0022   6F                     MOV   L,A   
+0023   0A                     LDAX   B   
+0024   03                     INX   B   
+0025   67                     MOV   H,A   ; (HL) <- CFA
+0026   5E           NEXT1:    MOV   E,M   ;(PC) <- ((W))
+0027   23                     INX   H   
+0028   56                     MOV   D,M   
+0029   EB                     XCHG      
+002A   E9                     PCHL      ; NOTE: (DE) = CFA+1
+002B                             ; 
+002B                LIT:         
+002B   0A                     LDAX   B   ; (HL) <- ((IP)) = LITERAL
+002C   03                     INX   B   ; (IP) <- (IP) + 2
+002D   6F                     MOV   L,A   ; LB
+002E   0A                     LDAX   B   ; HB
+002F   03                     INX   B   
+0030   67                     MOV   H,A   
+0031   D7                     RST   18   ; (S1) <- (HL)
+0032                             ; 
+0032                EXEC:        
+0032   E1                     POP   H   ; (HL) <- (S1) = CFA
+0033   C3 26 00               JMP   NEXT1   
+0036                             ; 
+0036                BRAN1:       
+0036   60                     MOV   H,B   ; (HL) <- (IP)
+0037   69                     MOV   L,C   
+0038   5E                     MOV   E,M   ; (DE) <- ((IP)) = BRANCH OFFSET
+0039   23                     INX   H   
+003A   56                     MOV   D,M   
+003B   2B                     DCX   H   
+003C   19                     DAD   D   ; (HL) <- (HL) + ((IP))
+003D   4D                     MOV   C,L   ; (IP) <- (HL)
+003E   44                     MOV   B,H   
+003F   E7                     RST   20   
+0040                             ; 
+0040                ZBRAN:       
+0040   E1                     POP   H   
+0041   7D                     MOV   A,L   
+0042   B4                     ORA   H   
+0043   CA 36 00               JZ   BRAN1   ; IF (S1)=0 THEN BRANCH
+0046   03                     INX   B   ; ELSE SKIP BRANCH OFFSET
+0047   03                     INX   B   
+0048   E7                     RST   20   
+0049                             ; 
+0049                SPAT:        
+0049                             ; 
+0049   21 00 00               LXI   H,0   
+004C   39                     DAD   SP   ; (HL) <- (SP)
+004D                             ; (S1) <- (HL)
+004D                             ; 
+004D                             ; 
+004D                SPSTO:       
+004D                             ; 
+004D   2A 04 00               LHLD   UP   ; (HL) <- USER VAR BASE ADDR
+0050   11 06 00               LXI   D,6   
+0053   19                     DAD   D   ; (HL) <- S0
+0054   5E                     MOV   E,M   ; (DE) <- (S0)
+0055   23                     INX   H   
+0056   56                     MOV   D,M   
+0057   EB                     XCHG      
+0058   F9                     SPHL      ; (SP) <- (S0)
+0059   E7                     RST   20   
+005A                             ; 
+005A                             ; 
+005A                RPAT:        
+005A   2A 04 00               LHLD   UP   ; (HL) <- USER VAR BASE ADDR
+005D   11 06 00               LXI   D,6   
+0060   19                     DAD   D   ; (HL) <- S0
+0061   5E                     MOV   E,M   ; (DE) <- (S0)
+0062   23                     INX   H   
+0063   56                     MOV   D,M   
+0064   EB                     XCHG      
+0065   F9                     SPHL      ; (SP) <- (S0)
+0066   E7                     RST   20   
+0067                             ; 
+0067                RPSTO:       
+0067                             ; 
+0067   2A 04 00               LHLD   UP   ; (HL) <- USER VARIABLE BASE ADDR
+006A   11 08 00               LXI   D,8   
+006D   19                     DAD   D   ; (HL) <- R0
+006E   5E                     MOV   E,M   ; (DE) <- (R0)
+006F   23                     INX   H   
+0070   56                     MOV   D,M   
+0071   EB                     XCHG      
+0072   22 06 00               SHLD   RPP   ; (RP) <- (R0)
+0075   E7                     RST   20   
+0076                             ; 
+0076                SEMIS:       
+0076   2A 06 00               LHLD   RPP   
+0079   4E                     MOV   C,M   ; (BC) <- (R1)
+007A   23                     INX   H   
+007B   46                     MOV   B,M   
+007C   23                     INX   H   
+007D   22 06 00               SHLD   RPP   ; (RP) <- (RP) + 2
+0080   E7                     RST   20   
+0081                             ; 
+0081                TOR:         
+0081                             ; 
+0081   D1                     POP   D   ; (DE) <- (S1)
+0082   2A 06 00               LHLD   RPP   
+0085   2B                     DCX   H   ; (RP) <- (RP) - 2
+0086   2B                     DCX   H   
+0087   22 06 00               SHLD   RPP   
+008A   73                     MOV   M,E   ; ((HL)) <- (DE)
+008B   23                     INX   H   
+008C   72                     MOV   M,D   
+008D   E7                     RST   20   
+008E                             ; 
+008E                FROMR:       
+008E                             ; 
+008E   2A 06 00               LHLD   RPP   
+0091   5E                     MOV   E,M   ; (DE) <- (R1)
+0092   23                     INX   H   
+0093   56                     MOV   D,M   
+0094   23                     INX   H   
+0095   22 06 00               SHLD   RPP   ; (RP) <- (RP) + 2
+0098   D5                     PUSH   D   ; (S1) <- (DE)
+0099   E7                     RST   20   
+009A                             ; 
+009A                             ; 
+009A                ZEQU:        
+009A   E1                     POP   H   ; (HL) <- (S1)
+009B   7D                     MOV   A,L   
+009C   B4                     ORA   H   ; IF (HL) = 0
+009D   21 00 00               LXI   H,0   ; THEN (HL) <- FALSE
+00A0   C2 A4 00               JNZ   ZEQU1   
+00A3   23                     INX   H   ; ELSE (HL) <- TRUE
+00A4                ZEQU1:       
+00A4   D7                     RST   18   ; (S1) <- (HL)
+00A5                             ; 
+00A5                             ; 
+00A5                ZLESS:       
+00A5   E1                     POP   H   ; (HL) <- (S1)
+00A6   29                     DAD   H   ; IF (HL) >= 0
+00A7   21 00 00               LXI   H,0   ; THEN (HL) <- FALSE
+00AA   D2 AE 00               JNC   ZLES1   
+00AD   23                     INX   H   ; ELSE (HL) <- TRUE
+00AE   D7           ZLES1:    RST   18   ; (S1) <- (HL)
+00AF                             ; 
+00AF                             ; 
+00AF                PLUS:        
+00AF                             ; 
+00AF                             ;(S1) <- (S1) + (S2)
+00AF   D1                     POP   D   
+00B0   E1                     POP   H   
+00B1   19                     DAD   D   
+00B2   D7                     RST   18   
+00B3                             ; 
+00B3                MINUS:       
+00B3                             ; 
+00B3   E1                     POP   H   
+00B4   7D                     MOV   A,L   
+00B5   2F                     CMA      
+00B6   6F                     MOV   L,A   
+00B7   7C                     MOV   A,H   
+00B8   2F                     CMA      
+00B9   67                     MOV   H,A   
+00BA   23                     INX   H   
+00BB   D7                     RST   18   
+00BC                             ; 
+00BC                             ; 
+00BC                OVER:        
+00BC   D1                     POP   D   
+00BD   E1                     POP   H   
+00BE   E5                     PUSH   H   
+00BF   D7                     RST   10   
+00C0                             ; 
+00C0                             ; 
+00C0                DROP:        
+00C0   E1                     POP   H   
+00C1   E7                     RST   20   
+00C2                             ; 
+00C2                             ; 
+00C2                SWAP:        
+00C2   E1                     POP   H   
+00C3   E3                     XTHL      
+00C4   D7                     RST   18   
+00C5                             ; 
+00C5                             ; 
+00C5                DUP:         
+00C5   E1                     POP   H   
+00C6   E5                     PUSH   H   
+00C7   D7                     RST   18   
+00C8                             ; 
+00C8   E1                     POP   H   ; (HL) <- ADDR
+00C9   5E                     MOV   E,M   ; (DE) <- (ADDR)
+00CA   23                     INX   H   
+00CB   56                     MOV   D,M   
+00CC   D5                     PUSH   D   ; (S1) <- (DE)
+00CD   E7                     RST   20   
+00CE                             ; 
+00CE                             ; 
+00CE                CAT:         ;(S1) <- ((S1))LB
+00CE   E1                     POP   H   ; (HL) <- ADDR
+00CF   6E                     MOV   L,M   ; (HL) <- (ADDR)LB
+00D0   26 00                  MVI   H,0   
+00D2   D7                     RST   18   
+00D3                             ; 
+00D3                             ; 
+00D3                STORE:       ;((S1)) <- (S2)
+00D3   E1                     POP   H   ; (HL) <- (S1) = ADDR
+00D4   D1                     POP   D   ; (DE) <- (S2) = VALUE
+00D5   73                     MOV   M,E   ; ((HL)) <- (DE)
+00D6   23                     INX   H   
+00D7   72                     MOV   M,D   
+00D8   E7                     RST   20   
+00D9                             ; 
+00D9                             ; 
+00D9                CSTOR:       ;((S1))LB <- (S2)LB
+00D9   E1                     POP   H   ; (HL) <- (S1) = ADDR
+00DA   D1                     POP   D   ; (DE) <- (S2) = BYTE
+00DB   73                     MOV   M,E   ; ((HL))LB <- (E)
+00DC   E7                     RST   20   
+00DD                             ; 
+00DD                             ; 
+00DD                             ; 
+00DD                             ; 
+
+
+FIGREL:             0001 DEFINED AT LINE 5
+FIGREV:             0001 DEFINED AT LINE 6
+USRVER:             0000 DEFINED AT LINE 7
+ABL:                0020 DEFINED AT LINE 11
+ACR:                000D DEFINED AT LINE 12
+ADOT:               002E DEFINED AT LINE 13
+BELL:               0007 DEFINED AT LINE 14
+BSIN:               007F DEFINED AT LINE 15
+BSOUT:              0008 DEFINED AT LINE 16
+DLE:                0010 DEFINED AT LINE 17
+LF:                 000A DEFINED AT LINE 18
+FF:                 000C DEFINED AT LINE 19
+EM:                 4000 DEFINED AT LINE 23
+                    > USED AT LINE 31
+NSCR:               0001 DEFINED AT LINE 24
+                    > USED AT LINE 30
+KBBUF:              0080 DEFINED AT LINE 25
+                    > USED AT LINE 29
+                    > USED AT LINE 30
+US:                 0040 DEFINED AT LINE 26
+                    > USED AT LINE 32
+RTS:                00A0 DEFINED AT LINE 27
+                    > USED AT LINE 33
+CO:                 0084 DEFINED AT LINE 29
+                    > USED AT LINE 31
+NBUF:               0008 DEFINED AT LINE 30
+                    > USED AT LINE 31
+BUF1:               3BE0 DEFINED AT LINE 31
+                    > USED AT LINE 32
+INITR0:             3BA0 DEFINED AT LINE 32
+                    > USED AT LINE 33
+                    > USED AT LINE 36
+                    > USED AT LINE 38
+                    > USED AT LINE 39
+INITS0:             3B00 DEFINED AT LINE 33
+                    > USED AT LINE 35
+UP:                 0004 DEFINED AT LINE 38
+                    > USED AT LINE 131
+                    > USED AT LINE 143
+                    > USED AT LINE 155
+RPP:                0006 DEFINED AT LINE 39
+                    > USED AT LINE 162
+                    > USED AT LINE 166
+                    > USED AT LINE 171
+                    > USED AT LINE 177
+                    > USED AT LINE 180
+                    > USED AT LINE 188
+                    > USED AT LINE 193
+DPUSH:              0010 DEFINED AT LINE 58
+HPUSH:              0018 DEFINED AT LINE 66
+NEXT:               0020 DEFINED AT LINE 76
+NEXT1:              0026 DEFINED AT LINE 82
+                    > USED AT LINE 99
+LIT:                002B DEFINED AT LINE 88
+EXEC:               0032 DEFINED AT LINE 97
+BRAN1:              0036 DEFINED AT LINE 101
+                    > USED AT LINE 117
+ZBRAN:              0040 DEFINED AT LINE 113
+SPAT:               0049 DEFINED AT LINE 122
+SPSTO:              004D DEFINED AT LINE 129
+RPAT:               005A DEFINED AT LINE 142
+RPSTO:              0067 DEFINED AT LINE 153
+SEMIS:              0076 DEFINED AT LINE 165
+TOR:                0081 DEFINED AT LINE 174
+FROMR:              008E DEFINED AT LINE 186
+ZEQU:               009A DEFINED AT LINE 198
+ZEQU1:              00A4 DEFINED AT LINE 205
+                    > USED AT LINE 203
+ZLESS:              00A5 DEFINED AT LINE 209
+ZLES1:              00AE DEFINED AT LINE 215
+                    > USED AT LINE 213
+PLUS:               00AF DEFINED AT LINE 218
+MINUS:              00B3 DEFINED AT LINE 226
+OVER:               00BC DEFINED AT LINE 239
+DROP:               00C0 DEFINED AT LINE 246
+SWAP:               00C2 DEFINED AT LINE 251
+DUP:                00C5 DEFINED AT LINE 257
+CAT:                00CE DEFINED AT LINE 270
+STORE:              00D3 DEFINED AT LINE 277
+CSTOR:              00D9 DEFINED AT LINE 286

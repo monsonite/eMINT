@@ -1,0 +1,101 @@
+eMINT Notes
+
+Ken Boak May 2025
+
+Use a derivative of the J1 simulator to create a CPU capable of efficiently executing eForth primitives.
+
+J1 needs a 16-bit instruction to be assembled from various bit fields.
+
+Victor Yurkovsky suggested the following alternate coding
+
+1 xxx xxxx xxxx xxxx   literal
+000 x xxxx xxxx xxxx   jump
+001 x xxxx xxxx xxxx   cond
+010 x xxxx xxxx xxxx   call
+011:
+12   : free
+11-8 : alu instruction
+7    : return
+6-5  : 00 = dstack //NOS mux
+       01 = astack
+       10 = memory
+       11 = io
+4    : free  
+3    : apop  -- 11 means io-write
+2    : apush /
+1    : dpop   -- 11 means mem-write
+0    : dpush  /
+
+
+
+
+1 xxx xxxx xxxx xxxx   Literal
+000 x xxxx xxxx xxxx   Jump
+001 x xxxx xxxx xxxx   Cond
+010 x xxxx xxxx xxxx   Call
+011:				   ALU
+12-8 : alu instruction
+7    : return
+6	 : OPR/Byte
+5-4  : 00 = dstack //NOS mux
+       01 = astack
+       10 = memory
+       11 = io
+3    : apop  -- 11 means io-write
+2    : apush /
+1    : dpop   -- 11 means mem-write
+0    : dpush  /
+
+
+Instruction encoding becomes
+
+
+       4'b0000: tos_res1 = tos;  //first 8 involve no nos
+       4'b0001: tos_res1 = ~tos;
+       4'b0010: tos_res1 = tos < nos;
+       4'b0011: tos_res1 = (tos == nos);
+       4'b0100: tos_res1 = tos<<1;
+       4'b0101: tos_res1 = tos>>1;
+       4'b0110: tos_res1 = {tos[14:0],tos[15]}; //rotate tos;
+       4'b0111: tos_res1 = {tos[15:8]};
+       4'b1000: tos_res1 = nos;      
+       4'b1001: tos_res1 = nos + tos;
+       4'b1010: tos_res1 = nos - tos;
+       4'b1011: tos_res1 = nos & tos;
+       4'b1100: tos_res1 = nos | tos;
+       4'b1101: tos_res1 = nos ^ tos;
+       4'b1110: tos_res1 = tos+1;
+       4'b1111: tos_res1 = tos-1;
+	   
+	   
+	   
+	   My proposal for the eMINT CPU is a derivative of James Bowman's J1 Forth CPU.
+	   
+	   The instructions fall into just 4 categories defined by IR15:14.
+	   	  
+	   0 0  - An ALU operation								ALU
+	   0 1  - A CALL or JUMP with a 14-bit range.			C/J
+	   1 0  - 15-bit +ve unsigned literal					LIT
+	   1 1  - Modify literal to extend it to 16-bits		EXT 
+	   
+	   The ALU operation is further sub-divided with several bit-fields.
+	   
+	   CALL/JUMP defines a 16,384 byte target
+	   
+	   LIT accepts a 15-bit integer that can be sign-extended to 16-bits in the next instruction.
+	   
+	   Call and Jump share the same ID code. A Call puts the Return address on the Return Stack - but this can be dropped if only a Jump is required.
+	   
+	   
+	   
+I have been looking at Peter Grogono's MOUSE programming language.
+
+This began life as MUSYS in 1969, a music composing language running on the PDP-8.
+
+A decade late it featured in BYTE magazine as an interpreter for CP/M systems.
+
+Having assembled the source code, it is significantly smaller than MINT (on the Z80) coming in at about 75 to 80% of the length.
+
+MOUSE, although using a stack and RPN, does not present the usual stack operations (DUP, DROP, SWAP and OVER) to the user.
+
+These are used internally.

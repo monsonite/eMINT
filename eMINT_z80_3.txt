@@ -1,0 +1,432 @@
+.org $00
+
+;	RELEASE & VERSION NUMBERS
+;
+FIGREL	EQU	1	; FIG RELEASE #
+FIGREV	EQU	1	; FIG REVISION #
+USRVER	EQU	0	; USER VERSION #
+;
+;	ASCII CHARACTERS USED
+;
+ABL	EQU	20H	; SPACE
+ACR	EQU	0DH	; CARRIAGE RETURN
+ADOT	EQU	02EH	; PERIOD
+BELL	EQU	07H	; (^G)
+BSIN	EQU	7FH	; INPUT BACKSPACE CHR = RUBOUT
+BSOUT	EQU	08H	; OUTPUT BACKSPACE (^H)
+DLE	EQU	10H	; (^P)
+LF	EQU	0AH	; LINE FEED
+FF	EQU	0CH	; FORM FEED (^L)
+;
+;	MEMORY ALLOCATION
+;
+EM	EQU	4000H	; TOP OF MEMORY + 1 = LIMIT
+NSCR	EQU	1	; NUMBER OF 1024 BYTE SCREENS
+KBBUF	EQU	128	; DATA BYTES PER DISK BUFFER
+US	EQU	40H	; USER VARIABLES SPACE
+RTS	EQU	0A0H	; RETURN STACK & TERM BUFF SPACE
+;
+CO	EQU	KBBUF+4	; DISK BUFFER + 2 HEADER + 2 TAIL
+NBUF	EQU	NSCR*400H/KBBUF	; NUMBER OF BUFFERS
+BUF1	EQU	EM-CO*NBUF	; ADDR FIRST DISK BUFFER
+INITR0	EQU	BUF1-US		; (R0)
+INITS0	EQU	INITR0-RTS	; (S0)
+
+	DW	INITS0	; INIT (S0)
+	DW	INITR0	; INIT (R0)
+
+UP	DW	INITR0	; USER AREA POINTER
+RPP	DW	INITR0	; RETURN STACK POINTER
+;	MUST BE IN SAME ORDER AS USER VARIABLES
+
+
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+
+
+;--------------------------------------------------
+;
+;	NEXT, THE FORTH ADDRESS INTERPRETER
+;	  ( POST INCREMENTING VERSION )
+;
+DPUSH	PUSH	DE
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+HPUSH	PUSH	HL
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        
+        
+NEXT:
+    LD A,(BC)	;(W) <- ((IP))
+	INC BC	;(IP) <- (IP)+2
+	LD L,A
+	LD A,(BC)
+	INC BC
+	LD	H,A	; (HL) <- CFA
+NEXT1:	LD	E,(HL)	;(PC) <- ((W))
+	INC HL
+	LD	D,(HL)
+	EX DE,HL
+	JP (HL)		; NOTE: (DE) = CFA+1
+	
+	    DB    lsb(nop_)     ;   SP
+        DB    lsb(store_)   ;   !            
+        DB    lsb(dup_)     ;   "
+        DB    lsb(hex_)    ;    #
+        DB    lsb(swap_)   ;    $            
+        DB    lsb(over_)   ;    %            
+        DB    lsb(and_)    ;    &
+        DB    lsb(drop_)   ;    '
+        DB    lsb(begin_)  ;    (        
+        DB    lsb(again_)  ;    )
+        DB    lsb(mul_)    ;    *            
+        DB    lsb(add_)    ;    +
+        DB    lsb(hdot_)   ;    ,            
+        DB    lsb(sub_)    ;    -
+        DB    lsb(dot_)    ;    .
+        DB    lsb(div_)    ;    /
+        DB    lsb(num_)    ;    0            
+        DB    lsb(num_)    ;    1        
+        DB    lsb(num_)    ;    2            
+        DB    lsb(num_)    ;    3
+        DB    lsb(num_)    ;    4            
+        DB    lsb(num_)    ;    5            
+        DB    lsb(num_)    ;    6            
+        DB    lsb(num_)    ;    7
+        DB    lsb(num_)    ;    8            
+        DB    lsb(num_)    ;    9        
+        DB    lsb(def_)    ;    :        
+        DB    lsb(ret_)    ;    ;
+        DB    lsb(lt_)     ;    <
+        DB    lsb(eq_)     ;    =            
+        DB    lsb(gt_)     ;    >            
+        DB    lsb(getRef_) ;    ?
+        DB    lsb(fetch_)  ;    @    
+        DB    lsb(call_)   ;    A    
+        DB    lsb(call_)   ;    B
+        DB    lsb(call_)   ;    C
+        DB    lsb(call_)   ;    D    
+        DB    lsb(call_)   ;    E
+        DB    lsb(call_)   ;    F
+        DB    lsb(call_)   ;    G
+        DB    lsb(call_)   ;    H
+        DB    lsb(call_)   ;    I
+        DB    lsb(call_)   ;    J
+        DB    lsb(call_)   ;    K
+        DB    lsb(call_)   ;    L
+        DB    lsb(call_)   ;    M
+        DB    lsb(call_)   ;    N
+        DB    lsb(call_)   ;    O
+        DB    lsb(call_)   ;    P
+        DB    lsb(call_)   ;    Q
+        DB    lsb(call_)   ;    R
+        DB    lsb(call_)   ;    S
+        DB    lsb(call_)   ;    T
+        DB    lsb(call_)   ;    U
+        DB    lsb(call_)   ;    V
+        DB    lsb(call_)   ;    W
+        DB    lsb(call_)   ;    X
+        DB    lsb(call_)   ;    Y
+        DB    lsb(call_)   ;    Z
+        DB    lsb(arrDef_) ;    [
+        DB    lsb(alt_)    ;    \
+        DB    lsb(arrEnd_) ;    ]
+        DB    lsb(xor_)    ;    ^
+        DB    lsb(neg_)    ;    _
+        DB    lsb(str_)    ;    `            
+        DB    lsb(var_)    ;    a
+        DB    lsb(var_)    ;    b
+        DB    lsb(var_)    ;    c
+        DB    lsb(var_)    ;    d
+        DB    lsb(var_)    ;    e
+        DB    lsb(var_)    ;    f
+        DB    lsb(var_)    ;    g
+        DB    lsb(var_)    ;    h
+        DB    lsb(var_)    ;    i            
+        DB    lsb(var_)    ;    j
+        DB    lsb(var_)    ;    k
+        DB    lsb(var_)    ;    l
+        DB    lsb(var_)    ;    m
+        DB    lsb(var_)    ;    n
+        DB    lsb(var_)    ;    o
+        DB    lsb(var_)    ;    p
+        DB    lsb(var_)    ;    q            
+        DB    lsb(var_)    ;    r
+        DB    lsb(var_)    ;    s    
+        DB    lsb(var_)    ;    t
+        DB    lsb(var_)    ;    u
+        DB    lsb(var_)    ;    v
+        DB    lsb(var_)    ;    w
+        DB    lsb(var_)    ;    x
+        DB    lsb(var_)    ;    y
+        DB    lsb(var_)    ;    z
+        DB    lsb(shl_)    ;    {
+        DB    lsb(or_)     ;    |            
+        DB    lsb(shr_)    ;    }            
+        DB    lsb(inv_)    ;    ~            
+        DB    lsb(nop_)    ;    backspace
+
+;
+LIT:
+    LD A,(BC)	; (HL) <- ((IP)) = LITERAL
+	INC BC	; (IP) <- (IP) + 2
+	LD L,A	; LB
+	LD A,(BC)	; HB
+	INC BC
+	LD	H,A
+    RST 18h	; (S1) <- (HL)
+	
+EXEC:
+    POP	HL	; (HL) <- (S1) = CFA
+	JR NEXT1
+	
+BRAN1:	
+    LD	H,B	; (HL) <- (IP)
+	LD	L,C
+	LD	E,(HL)	; (DE) <- ((IP)) = BRANCH OFFSET
+	INC HL
+	LD	D,(HL)
+	DEC HL
+	ADD HL,DE	; (HL) <- (HL) + ((IP))
+	LD	C,L	; (IP) <- (HL)
+	LD	B,H
+	RST 20h
+	
+ZBRAN:
+    POP	HL
+	LD	A,L
+	OR	H
+	JP Z, BRAN1	; IF (S1)=0 THEN BRANCH
+	INC BC	; ELSE SKIP BRANCH OFFSET
+	INC BC
+	RST 20h
+	
+SPAT:
+
+	LD	HL,0
+	ADD HL,SP	; (HL) <- (SP)
+		; (S1) <- (HL)
+;
+
+SPSTO:
+
+    LD	HL,(UP)	; (HL) <- USER VAR BASE ADDR
+	LD	DE,6
+	ADD HL,DE	; (HL) <- S0
+	LD	E,(HL)	; (DE) <- (S0)
+	INC HL
+	LD	D,(HL)
+	EX DE,HL
+	LD SP,HL		; (SP) <- (S0)
+	RST 20h
+;
+	
+RPAT:
+    LD	HL,(UP)	; (HL) <- USER VAR BASE ADDR
+	LD	DE,6
+	ADD HL,DE	; (HL) <- S0
+	LD	E,(HL)	; (DE) <- (S0)
+	INC HL
+	LD	D,(HL)
+	EX DE,HL
+	LD SP,HL		; (SP) <- (S0)
+	RST 20h
+;
+RPSTO:
+
+    LD  HL,	(UP)	; (HL) <- USER VARIABLE BASE ADDR
+	LD	DE,8
+	ADD HL,DE	; (HL) <- R0
+	LD	E,(HL)	; (DE) <- (R0)
+	INC HL
+	LD	D,(HL)
+	EX DE,HL
+	LD (RPP),HL	; (RP) <- (R0)
+	RST 20h
+;
+SEMIS:
+    LD HL,(RPP)
+	LD	C,(HL)	; (BC) <- (R1)
+	INC HL
+	LD	B,(HL)
+	INC HL
+	LD (RPP),HL	; (RP) <- (RP) + 2
+	RST 20h
+
+TOR:
+
+    POP	DE	; (DE) <- (S1)
+	LD HL,(RPP)
+	DEC HL	; (RP) <- (RP) - 2
+	DEC HL
+	LD (RPP),HL
+	LD	(HL),E	; ((HL)) <- (DE)
+	INC HL
+	LD	(HL),D
+	RST 20h
+;
+FROMR:
+
+    LD HL,(RPP)
+	LD	E,(HL)	; (DE) <- (R1)
+	INC HL
+	LD	D,(HL)
+	INC HL
+	LD (RPP),HL	; (RP) <- (RP) + 2
+	PUSH	DE	; (S1) <- (DE)
+	RST 20h
+;
+
+ZEQU:
+	POP	HL	; (HL) <- (S1)
+	LD	A,L
+	OR	H	; IF (HL) = 0
+	LD	HL,0	; THEN (HL) <- FALSE
+	JP NZ,	ZEQU1
+	INC HL	; ELSE (HL) <- TRUE
+ZEQU1:	
+    RST 18h	; (S1) <- (HL)
+;
+
+ZLESS:
+	POP	HL	; (HL) <- (S1)
+	ADD HL,DE	; IF (HL) >= 0
+	LD	HL,0	; THEN (HL) <- FALSE
+	JP NC,	ZLES1
+	INC HL	; ELSE (HL) <- TRUE
+ZLES1:	RST 18h	; (S1) <- (HL)
+;
+
+PLUS:
+
+;(S1) <- (S1) + (S2)
+	POP	DE
+	POP	HL
+	ADD HL,DE
+	RST 18h
+;
+MINUS:
+
+    POP	HL
+	LD	A,L
+	CPL
+	LD L,A
+	LD	A,H
+	CPL
+	LD	H,A
+	INC HL
+	RST 18h
+;
+
+OVER:
+	POP	DE
+	POP	HL
+	PUSH	HL
+	RST 10h
+;
+	
+DROP:
+	POP	HL
+	RST 20h
+;
+	
+SWAP:
+	POP	HL
+	EX (SP),HL
+	RST 18h
+;
+	
+DUP:
+	POP	HL
+	PUSH	HL
+	RST 18h
+	
+	POP	HL	; (HL) <- ADDR
+	LD	E,(HL)	; (DE) <- (ADDR)
+	INC HL
+	LD	D,(HL)
+	PUSH	DE	; (S1) <- (DE)
+	RST 20h
+;
+
+CAT:            ;(S1) <- ((S1))LB
+	POP	HL	; (HL) <- ADDR
+	LD	L,(HL)	; (HL) <- (ADDR)LB
+	LD	H,0
+	RST 18h
+;
+
+STORE:		;((S1)) <- (S2)
+	POP	HL	; (HL) <- (S1) = ADDR
+	POP	DE	; (DE) <- (S2) = VALUE
+	LD	(HL),E	; ((HL)) <- (DE)
+	INC HL
+	LD	(HL),D
+	RST 20h
+;
+
+CSTOR:		;((S1))LB <- (S2)LB
+	POP	HL	; (HL) <- (S1) = ADDR
+	POP	DE	; (DE) <- (S2) = BYTE
+	LD	(HL),E	; ((HL))LB <- (E)
+	RST 20h
+;
+and_:        
+        POP     DE          ; 10t Bitwise AND the top 2 elements of the stack
+        POP     HL          ; 10t
+        LD      A,E         ; 4t
+        AND     L           ; 4t
+        LD      L,A         ; 4t
+        LD      A,D         ; 4t
+        AND     H           ; 4t
+and1:
+        LD      H,A         ; 4t
+        PUSH    HL          ; 11t
+        RST 20h                ; 8t
+        
+                            ; 63t
+or_: 		 
+        POP     DE             ; Bitwise OR the top 2 elements of the stack
+        POP     HL
+        LD      A,E
+        OR      L
+        LD      L,A
+        LD      A,D
+        OR      H
+        JR and1
+
+xor_:		 
+        POP     DE            ; Bitwise XOR the top 2 elements of the stack
+xor1:
+        POP     HL
+        LD      A,E
+        XOR     L
+        LD      L,A
+        LD      A,D
+        XOR     H
+        JR and1
+
+inv_:						    ; Bitwise INVert the top member of the stack
+        LD DE, $FFFF            ; by xoring with $FFFF
+        JR xor1        
+   
+
+;
+	

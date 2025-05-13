@@ -1,0 +1,1700 @@
+0000                             ; 
+0000                             ; MOUSE.Z80, Peter Grogono
+0000                             ; 
+0000                             ; 
+0000                          .ORG   0   
+0000                             ; 
+0000                CPENT:    EQU   5   ;Use CP/M function
+0000                F_CB:     EQU   $5C   ;Default file control block
+0000                FCBEX:    EQU   F_cb+12   ;File extent
+0000                             ; 
+0000                             ; 
+0000                CURREC:   EQU   F_cb+32   ;Current record number
+0000                BUFFER:   EQU   $80   ;Default file buffer
+0000                TPA:      EQU   $100   ;Transient program area
+0000                             ; 
+0000                             ; CP/M Entry points
+0000                             ; 
+0000                             ;getchar    EQU       1                  ;Read from console
+0000                             ;putchar    EQU       2                  ;Write to console
+0000                STATUS:   EQU   11   ;Get console status
+0000                OPEN:     EQU   15   ;Open file
+0000                READ:     EQU   20   ;Read file
+0000                             ; 
+0000                             ; Program constants
+0000                             ; 
+0000                RECSIZE:   EQU   128   ;CP/M file buffer size
+0000                LOCSIZE:   EQU   26   ;Number of local variables
+0000                FRSIZE:   EQU   5   ;Size of environment stack frame
+0000                MACSIZE:   EQU   2*LocSize   ;Macro address table size
+0000                PROGSIZ:   EQU   16*1024   ;Maximum size of Mouse program
+0000                MAXLEV:   EQU   50   ;Maximum nesting level
+0000                ENVSIZE:   EQU   FrSize*MaxLev   ;Size of environment stack
+0000                STKSIZE:   EQU   500   ;Size of local and calculation stacks
+0000                             ; 
+0000                             ; 
+0000                             ; Other useful constants
+0000                             ; 
+0000                CR:       EQU   13   ;Carriage return
+0000                LF:       EQU   10   ;Line feed
+0000                CTRLC:    EQU   3   ;^C to exit from trace mode
+0000                GRAPHIC:   EQU   32   ;First ASCII graphic character
+0000                WIDTH:    EQU   80   ;Width of screen
+0000                EOF:      EQU   1AH   ;CP/M end of file code
+0000                OTHER:    EQU   0   ;Tag values for
+0000                MACROX:   EQU   1   ; environment
+0000                PARAM:    EQU   2   
+0000                             ; 
+0000                             ; Macro definitions
+0000                             ; 
+0000                             ; 
+0000                             ; 
+0000                             ; CALL        MACRO    func          ;Invoke a CP/M function
+0000                             ;           LD       C,func
+0000                             ;           CALL     CpEnt
+0000                             ;           ENDM
+0000                             ; 
+0000                             ;LD HL,     MACRO    string        ;LD HL,  a string on the console
+0000                             ;            LD       HL,string
+0000                             ;            CALL     Disp
+0000                             ;           ENDM
+0000                             ; 
+0000                             ;Skip bracketing characters
+0000                .macro SKIP,
+0000                             ; 
+0000                 LD       B,%%1
+0000                 LD       C,%%2
+0000                 CALL     SkipNst
+0000                .endm
+0000                 
+0000                             ; 
+0000                             ; 
+0000                             ; 
+0000                             ; Start of program
+0000                             ; 
+0000                             ;           ASEG                         ;Absolute segment
+0000                          .ORG   0   ;Load at Tpa
+0000   21 00 00               LD   HL,0   ;Save Ccp's stack pointer
+0003   39                     ADD   HL,SP   
+0004   22 14 07               LD   (Ccp),HL   
+0007   31 5B 49               LD   SP,Stack   ;Initialize local stack
+000A   CD C7 03     NOP1:     CALL   Loader   ;Load the Mouse program
+000D   21 0A 00               LD   HL,nop1   ;In case user wants to
+0010   36 00                  LD   (HL),0   ;SAVE "compiled" program
+0012   23                     INC   HL   
+0013   36 00                  LD   (HL),0   
+0015   23                     INC   HL   
+0016   36 00                  LD   (HL),0   
+0018                             ; 
+0018                             ; Initialize the interpreter
+0018                             ; 
+0018   21 67 07     INIT:     LD   HL,Prog   
+001B   22 16 07               LD   (CharPos),HL   
+001E   DD 21 50 4B            LD   IX,CalStak   ;Calculation stack pointer
+0022   FD 21 4B 4C            LD   IY,EnvStak   ;Environment stack pointer
+0026   21 00 00               LD   HL,0   
+0029   22 18 07               LD   (OffSet),HL   ;Variable address offset
+002C   21 1A 00               LD   HL,LocSize   
+002F   22 1A 07               LD   (NxtFree),HL   ;Next free variable address
+0032   3E 00                  LD   A,0   
+0034   32 1C 07               LD   (Tracing),A   ;Turn off tracing
+0037                             ; 
+0037                             ; Central interpreter loop
+0037                             ; 
+0037                CYCLE:       ; CALL       Status             ;Check keyboard
+0037   FE 00                  CP   0   
+0039   28 08                  JR   Z,get1   ;Jump if nothing entered
+003B   CD C9 04               CALL   getchar   ;Read the character entered
+003E   FE 03                  CP   CtrlC   
+0040   CA 92 06               JP   Z,Return   ;Return to CP/M if ^C
+0043   CD C9 04     GET1:     CALL   getchar   
+0046   FE 20                  CP   " "   
+0048   28 19                  JR   Z,get2   ;Don't trace blanks
+004A   3A 1C 07               LD   A,(Tracing)   
+004D   B7                     OR   A   
+004E   28 13                  JR   Z,get2   ;Process character unless tracing
+0050   CD 3B 06               CALL   Trace   ;LD HL,  current environment
+0053   CD C9 04               CALL   getchar   ;Read a character from keyboard
+0056   B7                     OR   A   ;Clear flags
+0057   FE 20                  CP   " "   
+0059   28 08                  JR   Z,get2   
+005B   FE 0D                  CP   Cr   
+005D   28 04                  JR   Z,get2   
+005F   AF                     XOR   A   ;Turn off tracing if character
+0060   32 1C 07               LD   (Tracing),A   ;is not a blank or a CR
+0063   2A 16 07     GET2:     LD   HL,(CharPos)   
+0066   7E                     LD   A,(HL)   ;Fetch the character again
+0067   FE 20                  CP   Graphic   
+0069   FA 3A 01               JP   M,illegal   ;Reject nongraphic characters
+006C   07                     RLCA      
+006D   26 00                  LD   H,0   
+006F   6F                     LD   L,A   ;HL  := 2*next character
+0070   0F                     RRCA      ;Restore character
+0071   11 3A 00               LD   DE,-2*Graphic+CharTab   
+0074   19                     ADD   HL,DE   ;Computer table address
+0075   5E                     LD   E,(HL)   
+0076   23                     INC   HL   
+0077   56                     LD   D,(HL)   
+0078   EB                     EX   DE,HL   ;HL := processing address
+0079   E9                     JP   (HL)   ;Jump to process character
+007A                             ; 
+007A                             ; Jump Address table for each ASCII Graphic character
+007A                             ; 
+007A   37 00        CHARTAB:   DW   cycle   ;Blank
+007C   D2 01                  DW   exclam   ;!
+007E   EF 01                  DW   quote   ;"
+0080   B3 02                  DW   sharp   ;#
+0082   92 06                  DW   Return   ;$
+0084   00 03                  DW   percent   ;%
+0086   8B 03                  DW   file   ;&     5/19/86
+0088   70 03                  DW   apost   ;'
+008A   86 02                  DW   lparen   ;(
+008C   8E 02                  DW   rparen   ;)
+008E   83 01                  DW   mul   ;*
+0090   6C 01                  DW   add   ;+
+0092   6A 03                  DW   endpar   ;,
+0094   7A 01                  DW   sub   ;-
+0096   37 02                  DW   dot   ;.
+0098   93 01                  DW   div   ;/
+009A   43 01                  DW   digit   ;0
+009C   43 01                  DW   digit   ;1
+009E   43 01                  DW   digit   ;2
+00A0   43 01                  DW   digit   ;3
+00A2   43 01                  DW   digit   ;4
+00A4   43 01                  DW   digit   ;5
+00A6   43 01                  DW   digit   ;6
+00A8   43 01                  DW   digit   ;7
+00AA   43 01                  DW   digit   ;8
+00AC   43 01                  DW   digit   ;9
+00AE   29 02                  DW   colon   ;:
+00B0   6A 03                  DW   endpar   ; 
+00B2   44 02                  DW   less   ;<
+00B4   5C 02                  DW   equal   ;=
+00B6   63 02                  DW   greater   ;>
+00B8   B3 01                  DW   query   ;?
+00BA   E8 02                  DW   at   ;@
+00BC   0B 02                  DW   uc   ;A
+00BE   0B 02                  DW   uc   ;B
+00C0   0B 02                  DW   uc   ;C
+00C2   0B 02                  DW   uc   ;D
+00C4   0B 02                  DW   uc   ;E
+00C6   0B 02                  DW   uc   ;F
+00C8   0B 02                  DW   uc   ;G
+00CA   0B 02                  DW   uc   ;H
+00CC   0B 02                  DW   uc   ;I
+00CE   0B 02                  DW   uc   ;J
+00D0   0B 02                  DW   uc   ;K
+00D2   0B 02                  DW   uc   ;L
+00D4   0B 02                  DW   uc   ;M
+00D6   0B 02                  DW   uc   ;N
+00D8   0B 02                  DW   uc   ;O
+00DA   0B 02                  DW   uc   ;P
+00DC   0B 02                  DW   uc   ;Q
+00DE   0B 02                  DW   uc   ;R
+00E0   0B 02                  DW   uc   ;S
+00E2   0B 02                  DW   uc   ;T
+00E4   0B 02                  DW   uc   ;U
+00E6   0B 02                  DW   uc   ;V
+00E8   0B 02                  DW   uc   ;W
+00EA   0B 02                  DW   uc   ;X
+00EC   0B 02                  DW   uc   ;Y
+00EE   0B 02                  DW   uc   ;Z
+00F0   70 02                  DW   lbrack   ;[
+00F2   A3 01                  DW   modu   ;\
+00F4   37 00                  DW   cycle   ;]
+00F6   9A 02                  DW   hat   ;^
+00F8   3A 01                  DW   illegal   
+00FA   3A 01                  DW   illegal   
+00FC   1A 02                  DW   lc   ;a
+00FE   1A 02                  DW   lc   ;b
+0100   1A 02                  DW   lc   ;c
+0102   1A 02                  DW   lc   ;d
+0104   1A 02                  DW   lc   ;e
+0106   1A 02                  DW   lc   ;f
+0108   1A 02                  DW   lc   ;g
+010A   1A 02                  DW   lc   ;h
+010C   1A 02                  DW   lc   ;i
+010E   1A 02                  DW   lc   ;j
+0110   1A 02                  DW   lc   ;k
+0112   1A 02                  DW   lc   ;l
+0114   1A 02                  DW   lc   ;m
+0116   1A 02                  DW   lc   ;n
+0118   1A 02                  DW   lc   ;o
+011A   1A 02                  DW   lc   ;p
+011C   1A 02                  DW   lc   ;q
+011E   1A 02                  DW   lc   ;r
+0120   1A 02                  DW   lc   ;s
+0122   1A 02                  DW   lc   ;t
+0124   1A 02                  DW   lc   ;u
+0126   1A 02                  DW   lc   ;v
+0128   1A 02                  DW   lc   ;w
+012A   1A 02                  DW   lc   ;x
+012C   1A 02                  DW   lc   ;y
+012E   1A 02                  DW   lc   ;z
+0130   7C 03                  DW   lbrace   ;{
+0132   3A 01                  DW   illegal   ;|
+0134   84 03                  DW   rbrace   ;}
+0136   3A 01                  DW   illegal   ;~
+0138   3A 01                  DW   illegal   ;DEL
+013A                             ; 
+013A                             ; Actions according to character class
+013A                             ; A = current character
+013A                             ; 
+013A   21 A6 06     ILLEGAL:   LD   HL,IllChar   ;Illegal character
+013D   CD 84 06               CALL   Disp   
+0140   C3 92 06               JP   Return   
+0143   21 00 00     DIGIT:    LD   HL,0   ;Digit
+0146   DE 30        DIG1:     SBC   A,"0"   ;Convert to binary
+0148   FA 63 01               JP   M,dig2   ;<0: not a digit
+014B   FE 0A                  CP   9+1   
+014D   F2 63 01               JP   P,dig2   ;>9: not a digit
+0150   16 00                  LD   D,0   
+0152   5F                     LD   E,A   ;DE := digit
+0153   D5                     PUSH   DE   
+0154   11 0A 00               LD   DE,10   
+0157   CD B7 05               CALL   Multply   ;HL := 10 * temp
+015A   D1                     POP   DE   
+015B   19                     ADD   HL,DE   ;HL := 10 * temp + digit
+015C   EB                     EX   DE,HL   ;Save value in DE
+015D   CD C9 04               CALL   getchar   
+0160   EB                     EX   DE,HL   ;Restore value
+0161   18 E3                  JR   dig1   
+0163   CD DB 04     DIG2:     CALL   PushCal   
+0166   CD D3 04               CALL   BkSpace   ;Reposition character pointer
+0169   C3 37 00               JP   cycle   
+016C   CD E6 04     ADD:      CALL   PopCal   ;+
+016F   EB                     EX   DE,HL   ;Pop two operands
+0170   CD E6 04               CALL   PopCal   ;and push their sum
+0173   19                     ADD   HL,DE   
+0174   CD DB 04               CALL   PushCal   
+0177   C3 37 00               JP   cycle   
+017A   CD A4 05     SUB:      CALL   Diff   ;-
+017D   CD DB 04               CALL   PushCal   ;Pop two operands
+0180   C3 37 00               JP   cycle   ;and push their difference
+0183   CD E6 04     MUL:      CALL   PopCal   ;*
+0186   EB                     EX   DE,HL   ;Pop two operands
+0187   CD E6 04               CALL   PopCal   ;and push their product
+018A   CD B7 05               CALL   Multply   
+018D   CD DB 04               CALL   PushCal   
+0190   C3 37 00               JP   cycle   
+0193   CD E6 04     DIV:      CALL   PopCal   ;/
+0196   EB                     EX   DE,HL   ;Pop two operands
+0197   CD E6 04               CALL   PopCal   ;and push their quotient
+019A   CD D8 05               CALL   Divide   
+019D   CD DB 04               CALL   PushCal   
+01A0   C3 37 00               JP   cycle   
+01A3   CD E6 04     MODU:     CALL   PopCal   ;\
+01A6   EB                     EX   DE,HL   ;Pop two operands
+01A7   CD E6 04               CALL   PopCal   ;and push their modulus
+01AA   CD E5 05               CALL   Modulus   
+01AD   CD DB 04               CALL   PushCal   
+01B0   C3 37 00               JP   cycle   
+01B3   CD C9 04     QUERY:    CALL   getchar   ;?
+01B6   FE 27                  CP   27H   ;Read from keyboard
+01B8   20 0C                  JR   NZ,qy2   
+01BA   CD C9 04               CALL   getchar   ;Read ASCII character
+01BD   26 00                  LD   H,0   
+01BF   6F                     LD   L,A   
+01C0   CD DB 04               CALL   PushCal   ;Stack it
+01C3   C3 37 00               JP   cycle   
+01C6   CD 76 05     QY2:      CALL   ReadNum   ;Otherwise read a number
+01C9   CD DB 04               CALL   PushCal   
+01CC   CD D3 04               CALL   BkSpace   ;Reposition character pointer
+01CF   C3 37 00               JP   cycle   
+01D2   CD C9 04     EXCLAM:   CALL   getchar   ;!
+01D5   FE 27                  CP   27H   ;LD HL,  value
+01D7   20 0A                  JR   NZ,ex2   
+01D9   CD E6 04               CALL   PopCal   ;!' LD HL, s ASCII character
+01DC   5D                     LD   E,L   
+01DD   CD 91 06               CALL   putchar   
+01E0   C3 37 00               JP   cycle   
+01E3   CD E6 04     EX2:      CALL   PopCal   ;! LD HL, s numerical value
+01E6   CD 4A 05               CALL   DisNum   
+01E9   CD D3 04               CALL   BkSpace   ;Reposition character pointer
+01EC   C3 37 00               JP   cycle   
+01EF   CD C9 04     QUOTE:    CALL   getchar   ;LD HL,  string
+01F2   FE 22                  CP   34   ;is it "
+01F4   CA 37 00               JP   Z,cycle   ;Terminate at matching quote
+01F7   FE 21                  CP   "!"   
+01F9   28 07                  JR   Z,newline   ;! becomes CR/LF
+01FB   5F                     LD   E,A   
+01FC   CD 91 06               CALL   putchar   ;LD HL,  other characters
+01FF   C3 EF 01               JP   quote   
+0202   21 A3 06     NEWLINE:   LD   HL,CrLf   
+0205   CD 84 06               CALL   Disp   
+0208   C3 EF 01               JP   quote   
+020B   DE 41        UC:       SBC   A,"A"   ;Upper case letter (Global)
+020D   16 00                  LD   D,0   
+020F   5F                     LD   E,A   ;DE := letter (0..25)
+0210   21 00 00               LD   HL,0   
+0213   19                     ADD   HL,DE   ;HL := address of variable
+0214   CD DB 04               CALL   PushCal   
+0217   C3 37 00               JP   cycle   
+021A   DE 61        LC:       SBC   A,"a"   ;Lower case letter (Local)
+021C   16 00                  LD   D,0   
+021E   5F                     LD   E,A   ;DE := letter (0..25)
+021F   2A 18 07               LD   HL,(OffSet)   
+0222   19                     ADD   HL,DE   ;HL := address of variable
+0223   CD DB 04               CALL   PushCal   
+0226   C3 37 00               JP   cycle   
+0229   CD AE 05     COLON:    CALL   Addr   ;Assignment
+022C   EB                     EX   DE,HL   ;DE := address
+022D   CD E6 04               CALL   PopCal   
+0230   EB                     EX   DE,HL   ;DE := data, HL := address
+0231   72                     LD   (HL),D   
+0232   23                     INC   HL   
+0233   73                     LD   (HL),E   ;Store value
+0234   C3 37 00               JP   cycle   
+0237   CD AE 05     DOT:      CALL   Addr   ;.
+023A   56                     LD   D,(HL)   ;Dereference
+023B   23                     INC   HL   
+023C   5E                     LD   E,(HL)   ;DE := contents
+023D   EB                     EX   DE,HL   
+023E   CD DB 04               CALL   PushCal   ;Stack contents
+0241   C3 37 00               JP   cycle   
+0244   CD A4 05     LESS:     CALL   Diff   ;<
+0247   FA 53 02               JP   M,true   
+024A   21 00 00     FALSE:    LD   HL,0   ;False = 0
+024D   CD DB 04               CALL   PushCal   
+0250   C3 37 00               JP   cycle   
+0253   21 01 00     TRUE:     LD   HL,1   ;True = 1
+0256   CD DB 04               CALL   PushCal   
+0259   C3 37 00               JP   cycle   
+025C   CD A4 05     EQUAL:    CALL   Diff   ;=
+025F   28 F2                  JR   Z,true   
+0261   18 E7                  JR   false   
+0263   CD A4 05     GREATER:   CALL   Diff   ;>
+0266   CD 2A 06               CALL   Negate   
+0269   7C                     LD   A,H   
+026A   B7                     OR   A   ;Set flags
+026B   FA 53 02               JP   M,true   
+026E   18 DA                  JR   false   
+0270   CD E6 04     LBRACK:   CALL   PopCal   ;[ - Skip if stack <=0
+0273   7C                     LD   A,H   
+0274   B7                     OR   A   
+0275   FA 7C 02               JP   M,lbr1   ;Skip if < 0
+0278   B5                     OR   L   
+0279   C2 37 00               JP   NZ,cycle   ;Skip if = 0
+027C                          ;*Macro unroll: lbr1:      skip      '[',']'
+027C   06 5B        LBR1:     LD   B,"["   
+027E   0E 5D                  LD   C,"]"   
+0280   CD 2D 05               CALL   SkipNst   
+0283   C3 37 00               JP   cycle   
+0286   3E 00        LPAREN:   LD   A,Other   ;(
+0288   CD F1 04               CALL   PushEnv   ;Stack current position
+028B   C3 37 00               JP   cycle   
+028E   FD 66 03     RPAREN:   LD   H,(IY+3)   ;)
+0291   FD 6E 02               LD   L,(IY+2)   ;Restore position without
+0294   22 16 07               LD   (CharPos),HL   ;popping stack
+0297   C3 37 00               JP   cycle   
+029A   CD E6 04     HAT:      CALL   PopCal   ;^
+029D   7C                     LD   A,H   
+029E   B7                     OR   A   
+029F   FA A6 02               JP   M,hat1   ;Exit loop if < 0
+02A2   B5                     OR   L   
+02A3   C2 37 00               JP   NZ,cycle   
+02A6   CD 0C 05     HAT1:     CALL   PopEnv   
+02A9                          ;*Macro unroll:  skip      '(',')'
+02A9   06 28                  LD   B,"("   
+02AB   0E 29                  LD   C,")"   
+02AD   CD 2D 05               CALL   SkipNst   
+02B0   C3 37 00               JP   cycle   
+02B3   CD C9 04     SHARP:    CALL   getchar   ;#
+02B6   FE 61                  CP   "a"   ;Macro call
+02B8   FA BD 02               JP   M,sh1   
+02BB   C6 E0                  ADD   A,"A"-"a"   ;Convert to upper case
+02BD   B7           SH1:      OR   A   
+02BE   DE 41                  SBC   A,"A"   ;A..Z -> 0..25
+02C0   07                     RLCA      ;*2 for word address
+02C1   06 00                  LD   B,0   
+02C3   4F                     LD   C,A   ;BC := offset of name
+02C4   3E 01                  LD   A,Macrox   
+02C6   CD F1 04               CALL   PushEnv   ;Save current state
+02C9   21 33 07               LD   HL,MacDefs   
+02CC   09                     ADD   HL,BC   ;HL := Address of definition
+02CD   5E                     LD   E,(HL)   
+02CE   23                     INC   HL   
+02CF   56                     LD   D,(HL)   ;DE := macro address
+02D0   7A                     LD   A,D   
+02D1   B3                     OR   E   
+02D2   28 1F                  JR   Z,sh2   ;Undefined macro
+02D4   ED 53 16 07            LD   (CharPos),DE   
+02D8   2A 1A 07               LD   HL,(NxtFree)   
+02DB   22 18 07               LD   (OffSet),HL   
+02DE   11 1A 00               LD   DE,LocSize   
+02E1   19                     ADD   HL,DE   
+02E2   22 1A 07               LD   (NxtFree),HL   ;NxtFree := NxtFree + 26
+02E5   C3 37 00               JP   cycle   
+02E8   2A 1A 07     AT:       LD   HL,(NxtFree)   ;@ (Return from macro)
+02EB   11 1A 00               LD   DE,LocSize   
+02EE   ED 52                  SBC   HL,DE   
+02F0   22 1A 07               LD   (NxtFree),HL   ;NxtFree := NxtFree - 26
+02F3   CD 0C 05     SH2:      CALL   PopEnv   ;Recover status
+02F6                          ;*Macro unroll:  skip      '#',';'            ;and skip over call
+02F6   06 23                  LD   B,"#"   ;and skip over call
+02F8   0E 3B                  LD   C,";"   
+02FA   CD 2D 05               CALL   SkipNst   
+02FD   C3 37 00               JP   cycle   
+0300   3E 02        PERCENT:   LD   A,Param   ;% - formal parameter
+0302   CD F1 04               CALL   PushEnv   ;Save current state
+0305   0E 01                  LD   C,1   ;parbal := 1
+0307   FD E5                  PUSH   IY   ;Save environment stack pointer
+0309   11 05 00     PC1:      LD   DE,5   
+030C   FD 19                  ADD   IY,DE   ;Next stack frame
+030E   FD 7E 01               LD   A,(IY+1)   ;Get tag value
+0311   FE 01                  CP   Macrox   
+0313   20 03                  JR   NZ,pc2   ;tag = macro
+0315   0D                     DEC   C   ;parbal := parbal - 1
+0316   18 05                  JR   pc3   
+0318   FE 02        PC2:      CP   Param   
+031A   20 01                  JR   NZ,pc3   ;tag = param
+031C   0C                     INC   C   ;parbal := parbal + 1
+031D   79           PC3:      LD   A,C   
+031E   B7                     OR   A   
+031F   20 E8                  JR   NZ,pc1   ;Loop until match
+0321   FD 66 05     PC4:      LD   H,(IY+5)   
+0324   FD 6E 04               LD   L,(IY+4)   
+0327   22 18 07               LD   (OffSet),HL   ;Recover offset
+032A   FD 66 03               LD   H,(IY+3)   ; for calling environment
+032D   FD 6E 02               LD   L,(IY+2)   
+0330   22 16 07               LD   (CharPos),HL   ;Restore position of call
+0333   FD E1                  POP   IY   ;Restore frame stack pointer
+0335   CD E6 04               CALL   PopCal   
+0338   5D                     LD   E,L   ;E := parnum
+0339   CD C9 04     PC5:      CALL   getchar   ;Search for actual parameter
+033C   FE 22                  CP   34   
+033E   20 05                  JR   NZ,pc6   
+0340   CD 24 05               CALL   SkipStr   
+0343   18 F4                  JR   pc5   
+0345   FE 23        PC6:      CP   "#"   
+0347   20 09                  JR   NZ,pc7   
+0349                          ;*Macro unroll:  skip      '#',';'
+0349   06 23                  LD   B,"#"   
+034B   0E 3B                  LD   C,";"   
+034D   CD 2D 05               CALL   SkipNst   
+0350   18 E7                  JR   pc5   
+0352   FE 2C        PC7:      CP   ","   
+0354   20 03                  JR   NZ,pc8   
+0356   1D                     DEC   E   ;parnum := parnum -1
+0357   18 0A                  JR   pc9   
+0359   FE 3B        PC8:      CP   ";"   
+035B   20 06                  JR   NZ,pc9   
+035D   CD 0C 05               CALL   PopEnv   ;Null parameter
+0360   C3 37 00               JP   cycle   
+0363   7B           PC9:      LD   A,E   
+0364   B7                     OR   A   
+0365   20 D2                  JR   NZ,pc5   ;Loop until parameter found
+0367   C3 37 00               JP   cycle   
+036A   CD 0C 05     ENDPAR:   CALL   PopEnv   ;, or ;
+036D   C3 37 00               JP   cycle   
+0370   CD C9 04     APOST:    CALL   getchar   ;'
+0373   26 00                  LD   H,0   ;Push ASCII character onto
+0375   6F                     LD   L,A   ; stack
+0376   CD DB 04               CALL   PushCal   
+0379   C3 37 00               JP   cycle   
+037C   3E 01        LBRACE:   LD   A,1   ;{
+037E   32 1C 07               LD   (Tracing),A   ;Turn on tracing
+0381   C3 37 00               JP   cycle   
+0384   AF           RBRACE:   XOR   A   ;}
+0385   32 1C 07               LD   (Tracing),A   ;Turn off tracing
+0388   C3 37 00               JP   cycle   
+038B   11 68 00     FILE:     LD   DE,Fcbex   ;&
+038E   AF                     XOR   A   ;Load .MSE file
+038F   12                     LD   (DE),A   ;Clear key bytes in Fcb
+0390   13                     INC   DE   
+0391   12                     LD   (DE),A   
+0392   13                     INC   DE   
+0393   12                     LD   (DE),A   
+0394   13                     INC   DE   
+0395   12                     LD   (DE),A   
+0396   11 7C 00               LD   DE,CurRec   
+0399   12                     LD   (DE),A   
+039A   0E 09                  LD   C,9   ;Keep track of number of
+039C   11 5C 00               LD   DE,F_cb   ;characters in filename
+039F   12                     LD   (DE),A   
+03A0   CD C9 04     F1:       CALL   getchar   ;Put characters in Fcb
+03A3   FE 26                  CP   "&"   ;until delimiting & found
+03A5   28 05                  JR   Z,f2   
+03A7   13                     INC   DE   
+03A8   0D                     DEC   C   
+03A9   12                     LD   (DE),A   
+03AA   18 F4                  JR   f1   
+03AC   3E 20        F2:       LD   A," "   ;Pad if necessary with blanks
+03AE   0D           F3:       DEC   C   
+03AF   28 04                  JR   Z,f4   
+03B1   13                     INC   DE   
+03B2   12                     LD   (DE),A   
+03B3   18 F9                  JR   f3   
+03B5   13           F4:       INC   DE   ;Tack on MSE extension
+03B6   3E 4D                  LD   A,"M"   
+03B8   12                     LD   (DE),A   
+03B9   13                     INC   DE   
+03BA   3E 53                  LD   A,"S"   
+03BC   12                     LD   (DE),A   
+03BD   13                     INC   DE   
+03BE   3E 45                  LD   A,"E"   
+03C0   12                     LD   (DE),A   
+03C1   CD C7 03               CALL   Loader   ;Load it and then jump
+03C4   C3 18 00               JP   init   ;to initialization code
+03C7                             ; 
+03C7                             ; Subroutines
+03C7                             ; 
+03C7                             ; The Mouse program loader
+03C7                             ; 
+03C7   21 1D 07     LOADER:   LD   HL,Signon   
+03CA   CD 84 06               CALL   Disp   
+03CD   11 5C 00               LD   DE,F_cb   ;Open the input file
+03D0   CD 0F 00               CALL   Open   
+03D3   FE FF                  CP   255   
+03D5   C2 E1 03               JP   NZ,readfil   
+03D8   21 DB 06               LD   HL,OpnFail   ;File could not be opened
+03DB   CD 84 06               CALL   Disp   
+03DE   C3 92 06               JP   Return   
+03E1   21 F8 06     READFIL:   LD   HL,Reading   
+03E4   CD 84 06               CALL   Disp   
+03E7   06 34                  LD   B,MacSize   ;Clear macro table
+03E9   21 33 07               LD   HL,MacDefs   
+03EC   36 00        CLEMAC:   LD   (HL),0   
+03EE   23                     INC   HL   
+03EF   10 FB                  DJNZ   clemac   
+03F1   01 00 40               LD   BC,ProgSiz   ;Clear program area
+03F4   21 67 07               LD   HL,Prog   
+03F7   36 00        CLEPGM:   LD   (HL),0   
+03F9   23                     INC   HL   
+03FA   0B                     DEC   BC   
+03FB   78                     LD   A,B   
+03FC   B1                     OR   C   
+03FD   20 F8                  JR   NZ,clepgm   
+03FF   DD 21 00 01            LD   IX,Buffer+RecSize   
+0403   FD 21 67 07            LD   IY,Prog   ;Set input and output pointers
+0407   CD 83 04     LD1:      CALL   Gch   
+040A   FE 20        LD2:      CP   " "   
+040C   F2 16 04               JP   P,ld3   
+040F   3E 20                  LD   A," "   
+0411   CD B1 04               CALL   Store   ;Convert nongraphic characters
+0414   18 F1                  JR   ld1   ;to blanks
+0416   20 0C        LD3:      JR   NZ,ld5   
+0418   CD B1 04               CALL   Store   ;Store first blank
+041B   CD 83 04     LD4:      CALL   Gch   
+041E   FE 20                  CP   " "   
+0420   28 F9                  JR   Z,ld4   ;Ignore following blanks
+0422   18 E6                  JR   ld2   
+0424   FE 7E        LD5:      CP   "~"   
+0426   20 09                  JR   NZ,ld7   
+0428   CD 83 04     LD6:      CALL   Gch   ;Remove comments by
+042B   FE 0D                  CP   Cr   ;skipping to EOL
+042D   20 F9                  JR   NZ,ld6   
+042F   18 D6                  JR   ld1   
+0431   FE 22        LD7:      CP   34   
+0433   20 12                  JR   NZ,ld9   
+0435   CD B1 04               CALL   Store   ;Store strings as is
+0438   CD 83 04     LD8:      CALL   Gch   
+043B   CD B1 04               CALL   Store   
+043E   FD 7E 00               LD   A,(IY)   ;Retrieve character
+0441   FE 22                  CP   34   
+0443   20 F3                  JR   NZ,ld8   
+0445   18 C0                  JR   ld1   
+0447   FE 24        LD9:      CP   "$"   
+0449   20 33                  JR   NZ,ld11   
+044B   FD 7E 00               LD   A,(IY)   
+044E   FE 22                  CP   34   
+0450   3E 24                  LD   A,"$"   
+0452   20 03                  JR   NZ,ld91   
+0454   C3 7E 04               JP   ld11   
+0457   CD B1 04     LD91:     CALL   Store   ;Store $ as terminator
+045A   CD 83 04               CALL   Gch   ;Macro definition
+045D   FE 40                  CP   "@"   ;Test for program without
+045F   F2 64 04               JP   P,ld9a   ;any Macros (05/03/86)
+0462   18 A3                  JR   ld1   ;If not, loop.
+0464   FE 61        LD9A:     CP   "a"   
+0466   FA 6B 04               JP   M,ld10   
+0469   C6 E0                  ADD   A,"A"-"a"   ;Convert lower to upper case
+046B   B7           LD10:     OR   A   
+046C   DE 41                  SBC   A,"A"   ;A..Z -> 0..25
+046E   07                     RLCA      ;* 2 for word address
+046F   16 00                  LD   D,0   
+0471   5F                     LD   E,A   
+0472   21 33 07               LD   HL,MacDefs   ;Address of definitions
+0475   19                     ADD   HL,DE   ;HL -> definition pointer
+0476   FD E5                  PUSH   IY   
+0478   D1                     POP   DE   ;DE := IY
+0479   73                     LD   (HL),E   
+047A   23                     INC   HL   
+047B   72                     LD   (HL),D   ;Store pointer to definition
+047C   18 89                  JR   ld1   
+047E   CD B1 04     LD11:     CALL   Store   ;Store everything else
+0481   18 84                  JR   ld1   
+0483                             ; 
+0483                             ; Put next character from file Buffer into A register.
+0483                             ; A new Buffer is read when IX = Buffer + 128.
+0483                             ; 
+0483   DD E5        GCH:      PUSH   IX   
+0485   E1                     POP   HL   ;HL := IX
+0486   11 00 01               LD   DE,Buffer+RecSize   
+0489   B7                     OR   A   
+048A   ED 52                  SBC   HL,DE   ;HL := IX - buffer - 128
+048C   20 0F                  JR   NZ,Gch1   
+048E   11 5C 00               LD   DE,F_cb   ;Read next sector
+0491   CD 14 00               CALL   Read   
+0494   B7                     OR   A   
+0495   20 12                  JR   NZ,Gch2   ;Jump if end of file
+0497   1E 2E                  LD   E,"."   
+0499                             ;          CALL      putchar             ;Show progress
+0499   DD 21 80 00            LD   IX,Buffer   ;Reset pointer
+049D   DD 7E 00     GCH1:     LD   A,(IX)   ;Get character
+04A0   B7                     OR   A   ;Clear carry
+04A1   FE 1A                  CP   Eof   
+04A3   28 04                  JR   Z,Gch2   
+04A5   B7                     OR   A   
+04A6   DD 23                  INC   IX   
+04A8   C9                     RET      
+04A9   21 F7 06     GCH2:     LD   HL,Loaded   ;End of file
+04AC   CD 84 06               CALL   Disp   
+04AF   E1                     POP   HL   ;Pop link to Gch
+04B0   C9                     RET      ;Return from Loader
+04B1                             ; 
+04B1                             ; Store character in A register in Program Buffer.
+04B1                             ; 
+04B1   FD 23        STORE:    INC   IY   
+04B3   FD 77 00               LD   (IY),A   
+04B6   FD E5                  PUSH   IY   
+04B8   E1                     POP   HL   ;HL := IY
+04B9   11 67 47               LD   DE,ProgTop   
+04BC   B7                     OR   A   
+04BD   ED 52                  SBC   HL,DE   ;Return if there is
+04BF   F8                     RET   M   ;space for more program
+04C0   21 BA 06               LD   HL,TooLong   
+04C3   CD 84 06               CALL   Disp   
+04C6   C3 92 06               JP   Return   
+04C9                             ; 
+04C9                             ; Get next character from Program Buffer.
+04C9                             ; On exit: A contains character;
+04C9                             ; HL points to character in Buffer.
+04C9                             ; 
+04C9   2A 16 07     GETCHAR:   LD   HL,(CharPos)   
+04CC   23                     INC   HL   
+04CD   22 16 07               LD   (CharPos),HL   
+04D0   7E                     LD   A,(HL)   
+04D1   B7                     OR   A   ;Clear carry
+04D2   C9                     RET      
+04D3                             ; 
+04D3                             ; Backspace the character pointer
+04D3                             ; 
+04D3   2A 16 07     BKSPACE:   LD   HL,(CharPos)   
+04D6   2B                     DEC   HL   
+04D7   22 16 07               LD   (CharPos),HL   
+04DA   C9                     RET      
+04DB                             ; 
+04DB                             ; Calculation Stack.
+04DB                             ; IX is the calculation Stack Pointer.
+04DB                             ; HL is pushed/popped from the Stack.
+04DB                             ; Underflow/overflow is not checked.
+04DB                             ; The Stack looks like this between calls:
+04DB                             ; 
+04DB                             ;          IX  ->        |   |
+04DB                             ;          IX+1          |LSB|
+04DB                             ;          IX+2          |MSB|
+04DB                             ; 
+04DB   DD 74 00     PUSHCAL:   LD   (IX),H   
+04DE   DD 2B                  DEC   IX   
+04E0   DD 75 00               LD   (IX),L   
+04E3   DD 2B                  DEC   IX   
+04E5   C9                     RET      
+04E6   DD 23        POPCAL:   INC   IX   
+04E8   DD 6E 00               LD   L,(IX)   
+04EB   DD 23                  INC   IX   
+04ED   DD 66 00               LD   H,(IX)   
+04F0   C9                     RET      
+04F1                             ; 
+04F1                             ; Frame Stack.
+04F1                             ; Each entry has 5 bytes.  IY is the Stack pointer.
+04F1                             ; Overflow/underflow is not checked.  Destroys DE.
+04F1                             ; On entry, A is assumed to hold the tag value.
+04F1                             ; Between calls the Stack looks like this:
+04F1                             ; 
+04F1                             ;          IY ->     |             |
+04F1                             ;          IY+1      | tag         |
+04F1                             ;          IY+2      | LSB CharPos |
+04F1                             ;          IY+3      | MSB CharPos |
+04F1                             ;          IY+4      | LSB OffSet  |
+04F1                             ;          IY+5      | MSB OffSet  |
+04F1                             ; 
+04F1   11 FB FF     PUSHENV:   LD   DE,-5   
+04F4   FD 19                  ADD   IY,DE   
+04F6   FD 77 01               LD   (IY+1),A   
+04F9   2A 16 07               LD   HL,(CharPos)   
+04FC   FD 75 02               LD   (IY+2),L   
+04FF   FD 74 03               LD   (IY+3),H   
+0502   2A 18 07               LD   HL,(OffSet)   
+0505   FD 75 04               LD   (IY+4),L   
+0508   FD 74 05               LD   (IY+5),H   
+050B   C9                     RET      
+050C   FD 66 05     POPENV:   LD   H,(IY+5)   
+050F   FD 6E 04               LD   L,(IY+4)   
+0512   22 18 07               LD   (OffSet),HL   
+0515   FD 66 03               LD   H,(IY+3)   
+0518   FD 6E 02               LD   L,(IY+2)   
+051B   22 16 07               LD   (CharPos),HL   
+051E   11 05 00               LD   DE,5   
+0521   FD 19                  ADD   IY,DE   
+0523   C9                     RET      
+0524                             ; 
+0524                             ; Skip over a string. On entry the character " has
+0524                             ; been seen.  This subroutine looks for the next ".
+0524                             ; Destroys A, HL
+0524                             ; 
+0524   CD C9 04     SKIPSTR:   CALL   getchar   
+0527   FE 22                  CP   34   
+0529   C2 24 05               JP   NZ,SkipStr   
+052C   C9                     RET      
+052D                             ; 
+052D                             ; Skip bracketing characters.
+052D                             ; On entry B = left character(e.g. [)
+052D                             ; and C = right character (e.g. ])
+052D                             ; Destroys A, D, HL; must preserve E for % processing.
+052D                             ; 
+052D   16 01        SKIPNST:   LD   D,1   ;Level counter
+052F   AF           SK1:      XOR   A   ;A := 0
+0530   BA                     CP   D   
+0531   C8                     RET   Z   ;Return when level counter = 0
+0532   CD C9 04     SK2:      CALL   getchar   
+0535   FE 22                  CP   34   
+0537   20 05                  JR   NZ,sk3   
+0539   CD 24 05               CALL   SkipStr   ;Skip a string
+053C   18 F4                  JR   sk2   
+053E   B8           SK3:      CP   B   
+053F   20 03                  JR   NZ,sk4   
+0541   14                     INC   D   ;Left character
+0542   18 EB                  JR   sk1   
+0544   B9           SK4:      CP   C   
+0545   20 E8                  JR   NZ,sk1   
+0547   15                     DEC   D   ;Right character
+0548   18 E5                  JR   sk1   
+054A                             ; 
+054A                             ; LD HL,  HL as a signed decimal string followed by a blank.
+054A                             ; All registers destroyed.
+054A                             ; 
+054A   7C           DISNUM:   LD   A,H   
+054B   B7                     OR   A   
+054C   F2 59 05               JP   P,ds1   
+054F   CD 2A 06               CALL   Negate   ;Number is negative
+0552   E5                     PUSH   HL   ;Save its value
+0553   1E 2D                  LD   E,"-"   
+0555   CD 91 06               CALL   putchar   
+0558   E1                     POP   HL   ;Restore number
+0559   16 01        DS1:      LD   D,1   
+055B   D5                     PUSH   DE   ;Set last digit flag
+055C   11 0A 00     DS2:      LD   DE,10   
+055F   CD F0 05               CALL   divmod   ;BC := HL/10, HL := HL\10
+0562   E5                     PUSH   HL   
+0563   60                     LD   H,B   ;Restore quotient
+0564   69                     LD   L,C   
+0565   7C                     LD   A,H   
+0566   B5                     OR   L   
+0567   20 F3                  JR   NZ,ds2   ;Loop until quotient is zero
+0569   D1           DS3:      POP   DE   ;Restore digit
+056A   7A                     LD   A,D   
+056B   B7                     OR   A   
+056C   C0                     RET   NZ   ;Exit when flag is found
+056D   7B                     LD   A,E   
+056E   C6 30                  ADD   A,"0"   ;Convert digit to ASCII
+0570   5F                     LD   E,A   
+0571   CD 91 06               CALL   putchar   ;LD HL,  digit
+0574   18 F3                  JR   ds3   
+0576                             ; 
+0576                             ; Read a signed number from the keyboard.
+0576                             ; HL := value of number; other registers destroyed
+0576                             ; 
+0576   CD C9 04     READNUM:   CALL   getchar   ;Read a character
+0579   21 00 00               LD   HL,0   ;Initialize value register
+057C   FE 2D                  CP   "-"   
+057E   F5                     PUSH   AF   ;Save sign flag
+057F   28 16                  JR   Z,rd3   ;Read first digit
+0581   DE 30        RD2:      SBC   A,"0"   
+0583   FA 9F 05               JP   M,rd4   ;Exit if character < "0"
+0586   FE 0A                  CP   9+1   
+0588   F2 9F 05               JP   P,rd4   ;Exit if character > "9"
+058B   16 00                  LD   D,0   ;DE := digit
+058D   5F                     LD   E,A   
+058E   D5                     PUSH   DE   
+058F   11 0A 00               LD   DE,10   
+0592   CD B7 05               CALL   Multply   ;Value := 10 * value
+0595   D1                     POP   DE   
+0596   19                     ADD   HL,DE   ;+ digit
+0597   E5           RD3:      PUSH   HL   
+0598   CD C9 04               CALL   getchar   ;Read another digit
+059B   E1                     POP   HL   
+059C   C3 81 05               JP   rd2   
+059F   F1           RD4:      POP   AF   ;Restore sign flag
+05A0   CC 2A 06               CALL   Z,Negate   ;Negate register if "-"
+05A3   C9                     RET      
+05A4                             ; 
+05A4                             ; Set HL := second operand - first operand.
+05A4                             ; Destroys DE
+05A4                             ; 
+05A4   CD E6 04     DIFF:     CALL   PopCal   
+05A7   EB                     EX   DE,HL   
+05A8   CD E6 04               CALL   PopCal   
+05AB   ED 52                  SBC   HL,DE   
+05AD   C9                     RET      
+05AE                             ; 
+05AE                             ; Pop the calculation stack and convert result to an address
+05AE                             ; in the data area.  The entry in the stack consists of a
+05AE                             ; letter value (0..25) + the current offset.
+05AE                             ; 
+05AE   CD E6 04     ADDR:     CALL   PopCal   
+05B1   29                     ADD   HL,HL   ;HL := 2 * (letter + offset)
+05B2   11 4C 4C               LD   DE,Data   
+05B5   19                     ADD   HL,DE   
+05B6   C9                     RET      
+05B7                             ; 
+05B7                             ; Multiply subroutine.
+05B7                             ; HL := HL * DE; other registers destroyed.
+05B7                             ; 
+05B7   7C           MULTPLY:   LD   A,H   
+05B8   AA                     XOR   D   
+05B9   F5                     PUSH   AF   
+05BA   CD 1A 06               CALL   MakePos   ;Make operands positive
+05BD   44                     LD   B,H   ;BC := HL
+05BE   4D                     LD   C,L   
+05BF   21 00 00               LD   HL,0   ;HL := 0 (result register)
+05C2   CB 28        MY1:      SRA   B   ;BC := BC/2
+05C4   CB 19                  RR   C   ;LSB to carry
+05C6   30 01                  JR   NC,my2   
+05C8   19                     ADD   HL,DE   ;Add multiplicand if bit set
+05C9   78           MY2:      LD   A,B   
+05CA   B1                     OR   C   
+05CB   28 06                  JR   Z,my3   ;Finished if BC = 0
+05CD   CB 23                  SLA   E   ;DE := 2 * DE
+05CF   CB 12                  RL   D   
+05D1   18 EF                  JR   my1   
+05D3   F1           MY3:      POP   AF   
+05D4   FC 2A 06               CALL   M,Negate   ;Negate result if necessary
+05D7   C9                     RET      
+05D8                             ; 
+05D8                             ; Divide subroutine
+05D8                             ; HL := HL div DE; other registers destroyed.
+05D8                             ; 
+05D8   7C           DIVIDE:   LD   A,H   
+05D9   AA                     XOR   D   
+05DA   F5                     PUSH   AF   ;Save sign of result
+05DB   CD F0 05               CALL   divmod   
+05DE   60                     LD   H,B   ;Get quotient
+05DF   69                     LD   L,C   
+05E0   F1                     POP   AF   
+05E1   FC 2A 06               CALL   M,Negate   ;Negate result if necessary
+05E4   C9                     RET      
+05E5                             ; 
+05E5                             ; Modulus subroutine.
+05E5                             ; HL := HL mod DE; other registers destroyed.
+05E5                             ; 
+05E5   7C           MODULUS:   LD   A,H   
+05E6   AA                     XOR   D   
+05E7   F5                     PUSH   AF   ;Save sign of result
+05E8   CD F0 05               CALL   divmod   
+05EB   F1                     POP   AF   
+05EC   FC 2A 06               CALL   M,Negate   ;Negate result if necessary
+05EF   C9                     RET      
+05F0                             ; 
+05F0                             ; This does the work for "divide" and "modulus".
+05F0                             ; BC := HL div DE; HL := HL mod DE; other registers destroyed
+05F0                             ; 
+05F0   7A           DIVMOD:   LD   A,D   
+05F1   B3                     OR   E   
+05F2   28 3E                  JR   Z,DivErr   ;Attempted divide by zero
+05F4   CD 1A 06               CALL   MakePos   ;Make operands positive
+05F7   AF                     XOR   A   ;A := 0
+05F8   EB           DM1:      EX   DE,HL   
+05F9   CB 74        DM2:      BIT   6,H   ;Normalize divisor
+05FB   20 04                  JR   NZ,dm3   
+05FD   3C                     INC   A   
+05FE   29                     ADD   HL,HL   ;Shift left
+05FF   18 F8                  JR   dm2   
+0601   EB           DM3:      EX   DE,HL   
+0602   01 00 00               LD   BC,0   ;BC := 0 (result register)
+0605   3C                     INC   A   
+0606   B7           DM4:      OR   A   ;Clear flags
+0607   ED 52                  SBC   HL,DE   ;Subtract divisor
+0609   3F                     CCF      
+060A   38 02                  JR   C,dm5   
+060C   19                     ADD   HL,DE   ;Result is negative
+060D   B7                     OR   A   
+060E   CB 11        DM5:      RL   C   ;Shift 0 or 1 into quotient
+0610   CB 10                  RL   B   
+0612   CB 2A                  SRA   D   ;Shift divisor
+0614   CB 1B                  RR   E   
+0616   3D                     DEC   A   ;Count bits
+0617   20 ED                  JR   NZ,dm4   
+0619   C9                     RET      
+061A                             ; 
+061A                             ; Make HL and DE positive
+061A                             ; 
+061A   CB 7C        MAKEPOS:   BIT   7,H   
+061C   28 03                  JR   Z,sg1   
+061E   CD 2A 06               CALL   Negate   ;Make HL positive
+0621   CB 7A        SG1:      BIT   7,D   
+0623   C8                     RET   Z   
+0624   EB                     EX   DE,HL   
+0625   CD 2A 06               CALL   Negate   ;Make DE positive
+0628   EB                     EX   DE,HL   
+0629   C9                     RET      
+062A                             ; 
+062A                             ; Negate HL.
+062A                             ; 
+062A   7C           NEGATE:   LD   A,H   ;Complement H
+062B   2F                     CPL      
+062C   67                     LD   H,A   
+062D   7D                     LD   A,L   ;Complement L
+062E   2F                     CPL      
+062F   6F                     LD   L,A   
+0630   23                     INC   HL   ;Increment for 1's complement
+0631   C9                     RET      
+0632   21 F9 06     DIVERR:   LD   HL,DivZero   
+0635   CD 3B 06               CALL   Trace   
+0638   C3 92 06               JP   Return   
+063B                             ; 
+063B                             ; LD HL,  current environment: output 40 characters
+063B                             ; before and after current character position
+063B                             ; and show current position.
+063B                             ; Destroys all registers.
+063B                             ; 
+063B   21 A3 06     TRACE:    LD   HL,CrLf   
+063E   2A 16 07               LD   HL,(CharPos)   
+0641   11 28 00               LD   DE,Width/2   ;Half screen width
+0644   ED 52                  SBC   HL,DE   ;HL := character position - 40
+0646   06 50                  LD   B,Width   ;# of characters to be LD HL, ed
+0648   7E           TR1:      LD   A,(HL)   ;Get a character
+0649   E5                     PUSH   HL   
+064A   11 67 07               LD   DE,Prog   
+064D   ED 52                  SBC   HL,DE   
+064F   FA 61 06               JP   M,tr2   ;Convert character to blank
+0652   21 66 47               LD   HL,ProgTop-1   ;if it is outside the program buffer
+0655   D1                     POP   DE   
+0656   D5                     PUSH   DE   
+0657   ED 52                  SBC   HL,DE   ;or not an ASCII graphic character
+0659   FA 61 06               JP   M,tr2   
+065C   FE 20                  CP   Graphic   
+065E   F2 63 06               JP   P,tr3   
+0661   3E 20        TR2:      LD   A," "   
+0663   5F           TR3:      LD   E,A   
+0664   C5                     PUSH   BC   
+0665   CD 91 06               CALL   putchar   ;LD HL,  the character
+0668   C1                     POP   BC   
+0669   E1                     POP   HL   
+066A   23                     INC   HL   
+066B   10 DB                  DJNZ   tr1   ;LD HL,  80 characters
+066D   21 A3 06               LD   HL,CrLf   
+0670   06 28                  LD   B,Width/2   
+0672   1E 20        TR4:      LD   E," "   
+0674   C5                     PUSH   BC   
+0675   CD 91 06               CALL   putchar   ;LD HL,  40 blanks
+0678   C1                     POP   BC   
+0679   10 F7                  DJNZ   tr4   
+067B   1E 5E                  LD   E,"^"   
+067D   CD 91 06               CALL   putchar   ;Point to offending character
+0680   21 A3 06               LD   HL,CrLf   
+0683   C9                     RET      
+0684                             ; 
+0684                             ; 
+0684                             ; LD HL,  a message.  HL is the address of a string of bytes
+0684                             ; terminated by a zero byte.  Destroys all registers.
+0684                             ; 
+0684   7E           DISP:     LD   A,(HL)   ;Get a character from message
+0685   B7                     OR   A   
+0686   C8                     RET   Z   ;Finished if zero
+0687   23                     INC   HL   
+0688   E5                     PUSH   HL   ;Save pointer
+0689   5F                     LD   E,A   
+068A   CD 91 06               CALL   putchar   ;LD HL,  the character
+068D   E1                     POP   HL   
+068E   C3 84 06               JP   Disp   
+0691                             ; 
+0691   C9           PUTCHAR:   RET      
+0692                             ; 
+0692                             ; 
+0692                             ; 
+0692                             ; 
+0692                             ; Return to operating system
+0692                             ; 
+0692   21 A3 06     RETURN:   LD   HL,CrLf   
+0695   CD 84 06               CALL   Disp   
+0698   21 32 07               LD   HL,Signoff   
+069B   CD 84 06               CALL   Disp   
+069E   2A 14 07               LD   HL,(Ccp)   ;Quiet return (05/03/86)
+06A1   F9                     LD   SP,HL   
+06A2   C9                     RET      
+06A3                             ; 
+06A3                             ; Messages
+06A3                             ; 
+06A3   0D 0A 00     CRLF:     DB   Cr,Lf,0   
+06A6   0D 0A 49 6C 6C 65 67 61 6C 20 63 68 61 72 61 63 74 65 72 00 ILLCHAR:   DB   Cr,Lf,"Illegal character",0   
+06BA   20 50 72 6F 67 72 61 6D 20 69 73 20 74 6F 6F 20 6C 6F 6E 67 20 66 6F 72 20 62 75 66 66 65 72 2E 00 TOOLONG:   DB   " Program is too long for buffer.",0   
+06DB   55 73 61 67 65 3A 20 4D 4F 55 53 45 20 66 69 6C 65 6E 61 6D 65 2E 6D 73 65 0D 0A 00 OPNFAIL:   DB   "Usage: MOUSE filename.mse",Cr,Lf,0   
+06F7   00           LOADED:   DB   0   
+06F8   00           READING:   DB   0   
+06F9   0D 0A 44 69 76 69 73 69 6F 6E 2F 6D 6F 64 75 6C 75 73 20 62 79 20 7A 65 72 6F 00 DIVZERO:   DB   Cr,Lf,"Division/modulus by zero",0   
+0714                             ; 
+0714                             ; Data
+0714                             ; 
+0714   00 00        CCP:      DW   0   ;Ccp address; used for quiet return
+0716   00 00        CHARPOS:   DW   0   ;Current character pointer
+0718   00 00        OFFSET:   DW   0   ;Current variable address offset
+071A   00 00        NXTFREE:   DW   0   ;Next free address for local data
+071C   00           TRACING:   DB   0   ;0 = no tracing, 1 = tracing
+071D   4D 4F 55 53 45 2E 5A 38 30 2C 20 32 2F 32 31 2F 39 33 0D 0A 00 SIGNON:   DB   "MOUSE.Z80, 2/21/93",Cr,Lf,0   
+0732   00           SIGNOFF:   DB   0   
+0733   00           MACDEFS:   DB   0   ;Macro definition table
+0734                PROG:     EQU   MacDefs+MacSize   ;Start of Mouse program
+0734                PROGTOP:   EQU   Prog+ProgSiz   ;End of Mouse program
+0734                STACK:    EQU   ProgTop+StkSize   ;Top of local stack
+0734                CALCLIM:   EQU   Stack+1   ;Limit of calculation stack
+0734                CALSTAK:   EQU   CalcLim+StkSize   ;Top of calculation stack
+0734                ENVLIM:   EQU   CalStak+1   ;Limit of environment stack
+0734                ENVSTAK:   EQU   EnvLim+EnvSize   ;Top of environment stack
+0734                DATA:     EQU   EnvStak+1   ;Local data area
+0734                MAXADDR:   EQU   2*LocSize*MaxLev+Data   
+0734                          END      
+
+
+CPENT:              0005 DEFINED AT LINE 7
+F_CB:               005C DEFINED AT LINE 8
+                    > USED AT LINE 9
+                    > USED AT LINE 12
+                    > USED AT LINE 499
+                    > USED AT LINE 532
+                    > USED AT LINE 623
+FCBEX:              0068 DEFINED AT LINE 9
+                    > USED AT LINE 487
+CURREC:             007C DEFINED AT LINE 12
+                    > USED AT LINE 496
+BUFFER:             0080 DEFINED AT LINE 13
+                    > USED AT LINE 554
+                    > USED AT LINE 619
+                    > USED AT LINE 629
+TPA:                0100 DEFINED AT LINE 14
+STATUS:             000B DEFINED AT LINE 20
+OPEN:               000F DEFINED AT LINE 21
+                    > USED AT LINE 533
+READ:               0014 DEFINED AT LINE 22
+                    > USED AT LINE 624
+RECSIZE:            0080 DEFINED AT LINE 26
+                    > USED AT LINE 554
+                    > USED AT LINE 619
+LOCSIZE:            001A DEFINED AT LINE 27
+                    > USED AT LINE 29
+                    > USED AT LINE 95
+                    > USED AT LINE 416
+                    > USED AT LINE 421
+                    > USED AT LINE 1041
+FRSIZE:             0005 DEFINED AT LINE 28
+                    > USED AT LINE 32
+MACSIZE:            0034 DEFINED AT LINE 29
+                    > USED AT LINE 541
+                    > USED AT LINE 1033
+PROGSIZ:            4000 DEFINED AT LINE 30
+                    > USED AT LINE 546
+                    > USED AT LINE 1034
+MAXLEV:             0032 DEFINED AT LINE 31
+                    > USED AT LINE 32
+                    > USED AT LINE 1041
+ENVSIZE:            00FA DEFINED AT LINE 32
+                    > USED AT LINE 1039
+STKSIZE:            01F4 DEFINED AT LINE 33
+                    > USED AT LINE 1035
+                    > USED AT LINE 1037
+CR:                 000D DEFINED AT LINE 38
+                    > USED AT LINE 119
+                    > USED AT LINE 571
+                    > USED AT LINE 1015
+                    > USED AT LINE 1016
+                    > USED AT LINE 1018
+                    > USED AT LINE 1021
+                    > USED AT LINE 1030
+LF:                 000A DEFINED AT LINE 39
+                    > USED AT LINE 1015
+                    > USED AT LINE 1016
+                    > USED AT LINE 1021
+CTRLC:              0003 DEFINED AT LINE 40
+                    > USED AT LINE 106
+GRAPHIC:            0020 DEFINED AT LINE 41
+                    > USED AT LINE 125
+                    > USED AT LINE 131
+                    > USED AT LINE 962
+WIDTH:              0050 DEFINED AT LINE 42
+                    > USED AT LINE 949
+                    > USED AT LINE 951
+                    > USED AT LINE 973
+EOF:                001A DEFINED AT LINE 43
+                    > USED AT LINE 632
+OTHER:              0000 DEFINED AT LINE 44
+                    > USED AT LINE 378
+MACROX:             0001 DEFINED AT LINE 45
+                    > USED AT LINE 403
+                    > USED AT LINE 434
+PARAM:              0002 DEFINED AT LINE 46
+                    > USED AT LINE 427
+                    > USED AT LINE 438
+NOP1:               000A DEFINED AT LINE 79
+                    > USED AT LINE 80
+INIT:               0018 DEFINED AT LINE 89
+                    > USED AT LINE 524
+CYCLE:              0037 DEFINED AT LINE 102
+                    > USED AT LINE 141
+                    > USED AT LINE 202
+                    > USED AT LINE 262
+                    > USED AT LINE 268
+                    > USED AT LINE 271
+                    > USED AT LINE 277
+                    > USED AT LINE 283
+                    > USED AT LINE 289
+                    > USED AT LINE 297
+                    > USED AT LINE 301
+                    > USED AT LINE 308
+                    > USED AT LINE 312
+                    > USED AT LINE 315
+                    > USED AT LINE 330
+                    > USED AT LINE 337
+                    > USED AT LINE 345
+                    > USED AT LINE 352
+                    > USED AT LINE 357
+                    > USED AT LINE 360
+                    > USED AT LINE 375
+                    > USED AT LINE 377
+                    > USED AT LINE 380
+                    > USED AT LINE 384
+                    > USED AT LINE 390
+                    > USED AT LINE 393
+                    > USED AT LINE 419
+                    > USED AT LINE 426
+                    > USED AT LINE 469
+                    > USED AT LINE 473
+                    > USED AT LINE 475
+                    > USED AT LINE 480
+                    > USED AT LINE 483
+                    > USED AT LINE 486
+GET1:               0043 DEFINED AT LINE 108
+                    > USED AT LINE 104
+GET2:               0063 DEFINED AT LINE 123
+                    > USED AT LINE 110
+                    > USED AT LINE 113
+                    > USED AT LINE 118
+                    > USED AT LINE 120
+CHARTAB:            007A DEFINED AT LINE 141
+                    > USED AT LINE 131
+ILLEGAL:            013A DEFINED AT LINE 241
+                    > USED AT LINE 126
+                    > USED AT LINE 204
+                    > USED AT LINE 205
+                    > USED AT LINE 233
+                    > USED AT LINE 235
+                    > USED AT LINE 236
+DIGIT:              0143 DEFINED AT LINE 244
+                    > USED AT LINE 157
+                    > USED AT LINE 158
+                    > USED AT LINE 159
+                    > USED AT LINE 160
+                    > USED AT LINE 161
+                    > USED AT LINE 162
+                    > USED AT LINE 163
+                    > USED AT LINE 164
+                    > USED AT LINE 165
+                    > USED AT LINE 166
+DIG1:               0146 DEFINED AT LINE 245
+                    > USED AT LINE 259
+DIG2:               0163 DEFINED AT LINE 260
+                    > USED AT LINE 246
+                    > USED AT LINE 248
+ADD:                016C DEFINED AT LINE 263
+                    > USED AT LINE 152
+SUB:                017A DEFINED AT LINE 269
+                    > USED AT LINE 154
+MUL:                0183 DEFINED AT LINE 272
+                    > USED AT LINE 151
+DIV:                0193 DEFINED AT LINE 278
+                    > USED AT LINE 156
+MODU:               01A3 DEFINED AT LINE 284
+                    > USED AT LINE 201
+QUERY:              01B3 DEFINED AT LINE 290
+                    > USED AT LINE 172
+QY2:                01C6 DEFINED AT LINE 298
+                    > USED AT LINE 292
+EXCLAM:             01D2 DEFINED AT LINE 302
+                    > USED AT LINE 142
+EX2:                01E3 DEFINED AT LINE 309
+                    > USED AT LINE 304
+QUOTE:              01EF DEFINED AT LINE 313
+                    > USED AT LINE 143
+                    > USED AT LINE 320
+                    > USED AT LINE 323
+NEWLINE:            0202 DEFINED AT LINE 321
+                    > USED AT LINE 317
+UC:                 020B DEFINED AT LINE 324
+                    > USED AT LINE 174
+                    > USED AT LINE 175
+                    > USED AT LINE 176
+                    > USED AT LINE 177
+                    > USED AT LINE 178
+                    > USED AT LINE 179
+                    > USED AT LINE 180
+                    > USED AT LINE 181
+                    > USED AT LINE 182
+                    > USED AT LINE 183
+                    > USED AT LINE 184
+                    > USED AT LINE 185
+                    > USED AT LINE 186
+                    > USED AT LINE 187
+                    > USED AT LINE 188
+                    > USED AT LINE 189
+                    > USED AT LINE 190
+                    > USED AT LINE 191
+                    > USED AT LINE 192
+                    > USED AT LINE 193
+                    > USED AT LINE 194
+                    > USED AT LINE 195
+                    > USED AT LINE 196
+                    > USED AT LINE 197
+                    > USED AT LINE 198
+                    > USED AT LINE 199
+LC:                 021A DEFINED AT LINE 331
+                    > USED AT LINE 206
+                    > USED AT LINE 207
+                    > USED AT LINE 208
+                    > USED AT LINE 209
+                    > USED AT LINE 210
+                    > USED AT LINE 211
+                    > USED AT LINE 212
+                    > USED AT LINE 213
+                    > USED AT LINE 214
+                    > USED AT LINE 215
+                    > USED AT LINE 216
+                    > USED AT LINE 217
+                    > USED AT LINE 218
+                    > USED AT LINE 219
+                    > USED AT LINE 220
+                    > USED AT LINE 221
+                    > USED AT LINE 222
+                    > USED AT LINE 223
+                    > USED AT LINE 224
+                    > USED AT LINE 225
+                    > USED AT LINE 226
+                    > USED AT LINE 227
+                    > USED AT LINE 228
+                    > USED AT LINE 229
+                    > USED AT LINE 230
+                    > USED AT LINE 231
+COLON:              0229 DEFINED AT LINE 338
+                    > USED AT LINE 167
+DOT:                0237 DEFINED AT LINE 346
+                    > USED AT LINE 155
+LESS:               0244 DEFINED AT LINE 353
+                    > USED AT LINE 169
+FALSE:              024A DEFINED AT LINE 355
+                    > USED AT LINE 363
+                    > USED AT LINE 369
+TRUE:               0253 DEFINED AT LINE 358
+                    > USED AT LINE 354
+                    > USED AT LINE 362
+                    > USED AT LINE 368
+EQUAL:              025C DEFINED AT LINE 361
+                    > USED AT LINE 170
+GREATER:            0263 DEFINED AT LINE 364
+                    > USED AT LINE 171
+LBRACK:             0270 DEFINED AT LINE 370
+                    > USED AT LINE 200
+LBR1:               027C DEFINED AT LINE 64
+                    > USED AT LINE 373
+LPAREN:             0286 DEFINED AT LINE 378
+                    > USED AT LINE 149
+RPAREN:             028E DEFINED AT LINE 381
+                    > USED AT LINE 150
+HAT:                029A DEFINED AT LINE 385
+                    > USED AT LINE 203
+HAT1:               02A6 DEFINED AT LINE 391
+                    > USED AT LINE 388
+SHARP:              02B3 DEFINED AT LINE 394
+                    > USED AT LINE 144
+SH1:                02BD DEFINED AT LINE 398
+                    > USED AT LINE 396
+AT:                 02E8 DEFINED AT LINE 420
+                    > USED AT LINE 173
+SH2:                02F3 DEFINED AT LINE 424
+                    > USED AT LINE 412
+PERCENT:            0300 DEFINED AT LINE 427
+                    > USED AT LINE 146
+PC1:                0309 DEFINED AT LINE 431
+                    > USED AT LINE 443
+PC2:                0318 DEFINED AT LINE 438
+                    > USED AT LINE 435
+PC3:                031D DEFINED AT LINE 441
+                    > USED AT LINE 437
+                    > USED AT LINE 439
+PC4:                0321 DEFINED AT LINE 444
+PC5:                0339 DEFINED AT LINE 453
+                    > USED AT LINE 457
+                    > USED AT LINE 461
+                    > USED AT LINE 472
+PC6:                0345 DEFINED AT LINE 458
+                    > USED AT LINE 455
+PC7:                0352 DEFINED AT LINE 462
+                    > USED AT LINE 459
+PC8:                0359 DEFINED AT LINE 466
+                    > USED AT LINE 463
+PC9:                0363 DEFINED AT LINE 470
+                    > USED AT LINE 465
+                    > USED AT LINE 467
+ENDPAR:             036A DEFINED AT LINE 474
+                    > USED AT LINE 153
+                    > USED AT LINE 168
+APOST:              0370 DEFINED AT LINE 476
+                    > USED AT LINE 148
+LBRACE:             037C DEFINED AT LINE 481
+                    > USED AT LINE 232
+RBRACE:             0384 DEFINED AT LINE 484
+                    > USED AT LINE 234
+FILE:               038B DEFINED AT LINE 487
+                    > USED AT LINE 147
+F1:                 03A0 DEFINED AT LINE 501
+                    > USED AT LINE 507
+F2:                 03AC DEFINED AT LINE 508
+                    > USED AT LINE 503
+F3:                 03AE DEFINED AT LINE 509
+                    > USED AT LINE 513
+F4:                 03B5 DEFINED AT LINE 514
+                    > USED AT LINE 510
+LOADER:             03C7 DEFINED AT LINE 530
+                    > USED AT LINE 79
+                    > USED AT LINE 523
+READFIL:            03E1 DEFINED AT LINE 539
+                    > USED AT LINE 535
+CLEMAC:             03EC DEFINED AT LINE 543
+                    > USED AT LINE 545
+CLEPGM:             03F7 DEFINED AT LINE 548
+                    > USED AT LINE 553
+LD1:                0407 DEFINED AT LINE 556
+                    > USED AT LINE 561
+                    > USED AT LINE 573
+                    > USED AT LINE 582
+                    > USED AT LINE 594
+                    > USED AT LINE 610
+                    > USED AT LINE 612
+LD2:                040A DEFINED AT LINE 557
+                    > USED AT LINE 567
+LD3:                0416 DEFINED AT LINE 562
+                    > USED AT LINE 558
+LD4:                041B DEFINED AT LINE 564
+                    > USED AT LINE 566
+LD5:                0424 DEFINED AT LINE 568
+                    > USED AT LINE 562
+LD6:                0428 DEFINED AT LINE 570
+                    > USED AT LINE 572
+LD7:                0431 DEFINED AT LINE 574
+                    > USED AT LINE 569
+LD8:                0438 DEFINED AT LINE 577
+                    > USED AT LINE 581
+LD9:                0447 DEFINED AT LINE 583
+                    > USED AT LINE 575
+LD91:               0457 DEFINED AT LINE 590
+                    > USED AT LINE 588
+LD9A:               0464 DEFINED AT LINE 595
+                    > USED AT LINE 593
+LD10:               046B DEFINED AT LINE 598
+                    > USED AT LINE 596
+LD11:               047E DEFINED AT LINE 611
+                    > USED AT LINE 584
+                    > USED AT LINE 589
+GCH:                0483 DEFINED AT LINE 617
+                    > USED AT LINE 556
+                    > USED AT LINE 564
+                    > USED AT LINE 570
+                    > USED AT LINE 577
+                    > USED AT LINE 591
+GCH1:               049D DEFINED AT LINE 630
+                    > USED AT LINE 622
+GCH2:               04A9 DEFINED AT LINE 637
+                    > USED AT LINE 626
+                    > USED AT LINE 633
+STORE:              04B1 DEFINED AT LINE 644
+                    > USED AT LINE 560
+                    > USED AT LINE 563
+                    > USED AT LINE 576
+                    > USED AT LINE 578
+                    > USED AT LINE 590
+                    > USED AT LINE 611
+GETCHAR:            04C9 DEFINED AT LINE 660
+                    > USED AT LINE 105
+                    > USED AT LINE 108
+                    > USED AT LINE 115
+                    > USED AT LINE 257
+                    > USED AT LINE 290
+                    > USED AT LINE 293
+                    > USED AT LINE 302
+                    > USED AT LINE 313
+                    > USED AT LINE 394
+                    > USED AT LINE 453
+                    > USED AT LINE 476
+                    > USED AT LINE 501
+                    > USED AT LINE 732
+                    > USED AT LINE 746
+                    > USED AT LINE 794
+                    > USED AT LINE 811
+BKSPACE:            04D3 DEFINED AT LINE 669
+                    > USED AT LINE 261
+                    > USED AT LINE 300
+                    > USED AT LINE 311
+PUSHCAL:            04DB DEFINED AT LINE 684
+                    > USED AT LINE 260
+                    > USED AT LINE 267
+                    > USED AT LINE 270
+                    > USED AT LINE 276
+                    > USED AT LINE 282
+                    > USED AT LINE 288
+                    > USED AT LINE 296
+                    > USED AT LINE 299
+                    > USED AT LINE 329
+                    > USED AT LINE 336
+                    > USED AT LINE 351
+                    > USED AT LINE 356
+                    > USED AT LINE 359
+                    > USED AT LINE 479
+POPCAL:             04E6 DEFINED AT LINE 689
+                    > USED AT LINE 263
+                    > USED AT LINE 265
+                    > USED AT LINE 272
+                    > USED AT LINE 274
+                    > USED AT LINE 278
+                    > USED AT LINE 280
+                    > USED AT LINE 284
+                    > USED AT LINE 286
+                    > USED AT LINE 305
+                    > USED AT LINE 309
+                    > USED AT LINE 340
+                    > USED AT LINE 370
+                    > USED AT LINE 385
+                    > USED AT LINE 451
+                    > USED AT LINE 821
+                    > USED AT LINE 823
+                    > USED AT LINE 831
+PUSHENV:            04F1 DEFINED AT LINE 708
+                    > USED AT LINE 379
+                    > USED AT LINE 404
+                    > USED AT LINE 428
+POPENV:             050C DEFINED AT LINE 718
+                    > USED AT LINE 391
+                    > USED AT LINE 424
+                    > USED AT LINE 468
+                    > USED AT LINE 474
+SKIPSTR:            0524 DEFINED AT LINE 732
+                    > USED AT LINE 456
+                    > USED AT LINE 734
+                    > USED AT LINE 749
+SKIPNST:            052D DEFINED AT LINE 742
+                    > USED AT LINE 66
+                    > USED AT LINE 66
+                    > USED AT LINE 66
+                    > USED AT LINE 66
+SK1:                052F DEFINED AT LINE 743
+                    > USED AT LINE 754
+                    > USED AT LINE 756
+                    > USED AT LINE 758
+SK2:                0532 DEFINED AT LINE 746
+                    > USED AT LINE 750
+SK3:                053E DEFINED AT LINE 751
+                    > USED AT LINE 748
+SK4:                0544 DEFINED AT LINE 755
+                    > USED AT LINE 752
+DISNUM:             054A DEFINED AT LINE 763
+                    > USED AT LINE 310
+DS1:                0559 DEFINED AT LINE 771
+                    > USED AT LINE 765
+DS2:                055C DEFINED AT LINE 773
+                    > USED AT LINE 780
+DS3:                0569 DEFINED AT LINE 781
+                    > USED AT LINE 789
+READNUM:            0576 DEFINED AT LINE 794
+                    > USED AT LINE 298
+RD2:                0581 DEFINED AT LINE 799
+                    > USED AT LINE 813
+RD3:                0597 DEFINED AT LINE 810
+                    > USED AT LINE 798
+RD4:                059F DEFINED AT LINE 814
+                    > USED AT LINE 800
+                    > USED AT LINE 802
+DIFF:               05A4 DEFINED AT LINE 821
+                    > USED AT LINE 269
+                    > USED AT LINE 353
+                    > USED AT LINE 361
+                    > USED AT LINE 364
+ADDR:               05AE DEFINED AT LINE 831
+                    > USED AT LINE 338
+                    > USED AT LINE 346
+MULTPLY:            05B7 DEFINED AT LINE 840
+                    > USED AT LINE 253
+                    > USED AT LINE 275
+                    > USED AT LINE 807
+MY1:                05C2 DEFINED AT LINE 847
+                    > USED AT LINE 856
+MY2:                05C9 DEFINED AT LINE 851
+                    > USED AT LINE 849
+MY3:                05D3 DEFINED AT LINE 857
+                    > USED AT LINE 853
+DIVIDE:             05D8 DEFINED AT LINE 864
+                    > USED AT LINE 281
+MODULUS:            05E5 DEFINED AT LINE 877
+                    > USED AT LINE 287
+DIVMOD:             05F0 DEFINED AT LINE 888
+                    > USED AT LINE 774
+                    > USED AT LINE 867
+                    > USED AT LINE 880
+DM1:                05F8 DEFINED AT LINE 893
+DM2:                05F9 DEFINED AT LINE 894
+                    > USED AT LINE 898
+DM3:                0601 DEFINED AT LINE 899
+                    > USED AT LINE 895
+DM4:                0606 DEFINED AT LINE 902
+                    > USED AT LINE 913
+DM5:                060E DEFINED AT LINE 908
+                    > USED AT LINE 905
+MAKEPOS:            061A DEFINED AT LINE 918
+                    > USED AT LINE 843
+                    > USED AT LINE 891
+SG1:                0621 DEFINED AT LINE 921
+                    > USED AT LINE 919
+NEGATE:             062A DEFINED AT LINE 930
+                    > USED AT LINE 365
+                    > USED AT LINE 766
+                    > USED AT LINE 815
+                    > USED AT LINE 858
+                    > USED AT LINE 871
+                    > USED AT LINE 882
+                    > USED AT LINE 920
+                    > USED AT LINE 924
+DIVERR:             0632 DEFINED AT LINE 938
+                    > USED AT LINE 890
+TRACE:              063B DEFINED AT LINE 947
+                    > USED AT LINE 114
+                    > USED AT LINE 939
+TR1:                0648 DEFINED AT LINE 952
+                    > USED AT LINE 971
+TR2:                0661 DEFINED AT LINE 964
+                    > USED AT LINE 956
+                    > USED AT LINE 961
+TR3:                0663 DEFINED AT LINE 965
+                    > USED AT LINE 963
+TR4:                0672 DEFINED AT LINE 974
+                    > USED AT LINE 978
+DISP:               0684 DEFINED AT LINE 988
+                    > USED AT LINE 242
+                    > USED AT LINE 322
+                    > USED AT LINE 531
+                    > USED AT LINE 537
+                    > USED AT LINE 540
+                    > USED AT LINE 638
+                    > USED AT LINE 653
+                    > USED AT LINE 996
+                    > USED AT LINE 1006
+                    > USED AT LINE 1008
+PUTCHAR:            0691 DEFINED AT LINE 998
+                    > USED AT LINE 307
+                    > USED AT LINE 319
+                    > USED AT LINE 769
+                    > USED AT LINE 788
+                    > USED AT LINE 967
+                    > USED AT LINE 976
+                    > USED AT LINE 980
+                    > USED AT LINE 994
+RETURN:             0692 DEFINED AT LINE 1005
+                    > USED AT LINE 107
+                    > USED AT LINE 145
+                    > USED AT LINE 243
+                    > USED AT LINE 538
+                    > USED AT LINE 654
+                    > USED AT LINE 940
+CRLF:               06A3 DEFINED AT LINE 1015
+                    > USED AT LINE 321
+                    > USED AT LINE 947
+                    > USED AT LINE 972
+                    > USED AT LINE 981
+                    > USED AT LINE 1005
+ILLCHAR:            06A6 DEFINED AT LINE 1016
+                    > USED AT LINE 241
+TOOLONG:            06BA DEFINED AT LINE 1017
+                    > USED AT LINE 652
+OPNFAIL:            06DB DEFINED AT LINE 1018
+                    > USED AT LINE 536
+LOADED:             06F7 DEFINED AT LINE 1019
+                    > USED AT LINE 637
+READING:            06F8 DEFINED AT LINE 1020
+                    > USED AT LINE 539
+DIVZERO:            06F9 DEFINED AT LINE 1021
+                    > USED AT LINE 938
+CCP:                0714 DEFINED AT LINE 1025
+                    > USED AT LINE 77
+                    > USED AT LINE 1009
+CHARPOS:            0716 DEFINED AT LINE 1026
+                    > USED AT LINE 90
+                    > USED AT LINE 123
+                    > USED AT LINE 383
+                    > USED AT LINE 413
+                    > USED AT LINE 449
+                    > USED AT LINE 660
+                    > USED AT LINE 662
+                    > USED AT LINE 669
+                    > USED AT LINE 671
+                    > USED AT LINE 711
+                    > USED AT LINE 723
+                    > USED AT LINE 948
+OFFSET:             0718 DEFINED AT LINE 1027
+                    > USED AT LINE 94
+                    > USED AT LINE 334
+                    > USED AT LINE 415
+                    > USED AT LINE 446
+                    > USED AT LINE 714
+                    > USED AT LINE 720
+NXTFREE:            071A DEFINED AT LINE 1028
+                    > USED AT LINE 96
+                    > USED AT LINE 414
+                    > USED AT LINE 418
+                    > USED AT LINE 420
+                    > USED AT LINE 423
+TRACING:            071C DEFINED AT LINE 1029
+                    > USED AT LINE 98
+                    > USED AT LINE 111
+                    > USED AT LINE 122
+                    > USED AT LINE 482
+                    > USED AT LINE 485
+SIGNON:             071D DEFINED AT LINE 1030
+                    > USED AT LINE 530
+SIGNOFF:            0732 DEFINED AT LINE 1031
+                    > USED AT LINE 1007
+MACDEFS:            0733 DEFINED AT LINE 1032
+                    > USED AT LINE 405
+                    > USED AT LINE 542
+                    > USED AT LINE 603
+                    > USED AT LINE 1033
+PROG:               0767 DEFINED AT LINE 1033
+                    > USED AT LINE 89
+                    > USED AT LINE 547
+                    > USED AT LINE 555
+                    > USED AT LINE 954
+                    > USED AT LINE 1034
+PROGTOP:            4767 DEFINED AT LINE 1034
+                    > USED AT LINE 648
+                    > USED AT LINE 957
+                    > USED AT LINE 1035
+STACK:              495B DEFINED AT LINE 1035
+                    > USED AT LINE 78
+                    > USED AT LINE 1036
+CALCLIM:            495C DEFINED AT LINE 1036
+                    > USED AT LINE 1037
+CALSTAK:            4B50 DEFINED AT LINE 1037
+                    > USED AT LINE 91
+                    > USED AT LINE 1038
+ENVLIM:             4B51 DEFINED AT LINE 1038
+                    > USED AT LINE 1039
+ENVSTAK:            4C4B DEFINED AT LINE 1039
+                    > USED AT LINE 92
+                    > USED AT LINE 1040
+DATA:               4C4C DEFINED AT LINE 1040
+                    > USED AT LINE 833
+                    > USED AT LINE 1041
+MAXADDR:            5674 DEFINED AT LINE 1041

@@ -1,0 +1,294 @@
+.org $00
+
+;	RELEASE & VERSION NUMBERS
+;
+FIGREL	EQU	1	; FIG RELEASE #
+FIGREV	EQU	1	; FIG REVISION #
+USRVER	EQU	0	; USER VERSION #
+;
+;	ASCII CHARACTERS USED
+;
+ABL	EQU	20H	; SPACE
+ACR	EQU	0DH	; CARRIAGE RETURN
+ADOT	EQU	02EH	; PERIOD
+BELL	EQU	07H	; (^G)
+BSIN	EQU	7FH	; INPUT BACKSPACE CHR = RUBOUT
+BSOUT	EQU	08H	; OUTPUT BACKSPACE (^H)
+DLE	EQU	10H	; (^P)
+LF	EQU	0AH	; LINE FEED
+FF	EQU	0CH	; FORM FEED (^L)
+;
+;	MEMORY ALLOCATION
+;
+EM	EQU	4000H	; TOP OF MEMORY + 1 = LIMIT
+NSCR	EQU	1	; NUMBER OF 1024 BYTE SCREENS
+KBBUF	EQU	128	; DATA BYTES PER DISK BUFFER
+US	EQU	40H	; USER VARIABLES SPACE
+RTS	EQU	0A0H	; RETURN STACK & TERM BUFF SPACE
+;
+CO	EQU	KBBUF+4	; DISK BUFFER + 2 HEADER + 2 TAIL
+NBUF	EQU	NSCR*400H/KBBUF	; NUMBER OF BUFFERS
+BUF1	EQU	EM-CO*NBUF	; ADDR FIRST DISK BUFFER
+INITR0	EQU	BUF1-US		; (R0)
+INITS0	EQU	INITR0-RTS	; (S0)
+
+	DW	INITS0	; INIT (S0)
+	DW	INITR0	; INIT (R0)
+
+UP	DW	INITR0	; USER AREA POINTER
+RPP	DW	INITR0	; RETURN STACK POINTER
+;	MUST BE IN SAME ORDER AS USER VARIABLES
+
+
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+
+
+;--------------------------------------------------
+;
+;	NEXT, THE FORTH ADDRESS INTERPRETER
+;	  ( POST INCREMENTING VERSION )
+;
+DPUSH	PUSH	D
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+HPUSH	PUSH	H
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        
+        
+NEXT	LDAX	B	;(W) <- ((IP))
+	INX	B	;(IP) <- (IP)+2
+	MOV	L,A
+	LDAX	B
+	INX	B
+	MOV	H,A	; (HL) <- CFA
+NEXT1:	MOV	E,M	;(PC) <- ((W))
+	INX	H
+	MOV	D,M
+	XCHG
+	PCHL		; NOTE: (DE) = CFA+1
+;
+LIT:
+    LDAX	B	; (HL) <- ((IP)) = LITERAL
+	INX	B	; (IP) <- (IP) + 2
+	MOV	L,A	; LB
+	LDAX	B	; HB
+	INX	B
+	MOV	H,A
+    RST 18	; (S1) <- (HL)
+	
+EXEC:
+    POP	H	; (HL) <- (S1) = CFA
+	JMP NEXT1
+	
+BRAN1:	
+    MOV	H,B	; (HL) <- (IP)
+	MOV	L,C
+	MOV	E,M	; (DE) <- ((IP)) = BRANCH OFFSET
+	INX	H
+	MOV	D,M
+	DCX	H
+	DAD	D	; (HL) <- (HL) + ((IP))
+	MOV	C,L	; (IP) <- (HL)
+	MOV	B,H
+	RST 20
+	
+ZBRAN:
+    POP	H
+	MOV	A,L
+	ORA	H
+	JZ	BRAN1	; IF (S1)=0 THEN BRANCH
+	INX	B	; ELSE SKIP BRANCH OFFSET
+	INX	B
+	RST 20
+	
+SPAT:
+
+	LXI	H,0
+	DAD	SP	; (HL) <- (SP)
+		; (S1) <- (HL)
+;
+
+SPSTO:
+
+    LHLD	UP	; (HL) <- USER VAR BASE ADDR
+	LXI	D,6
+	DAD	D	; (HL) <- S0
+	MOV	E,M	; (DE) <- (S0)
+	INX	H
+	MOV	D,M
+	XCHG
+	SPHL		; (SP) <- (S0)
+	RST 20
+;
+	
+RPAT:
+    LHLD	UP	; (HL) <- USER VAR BASE ADDR
+	LXI	D,6
+	DAD	D	; (HL) <- S0
+	MOV	E,M	; (DE) <- (S0)
+	INX	H
+	MOV	D,M
+	XCHG
+	SPHL		; (SP) <- (S0)
+	RST 20
+;
+RPSTO:
+
+    LHLD	UP	; (HL) <- USER VARIABLE BASE ADDR
+	LXI	D,8
+	DAD	D	; (HL) <- R0
+	MOV	E,M	; (DE) <- (R0)
+	INX	H
+	MOV	D,M
+	XCHG
+	SHLD	RPP	; (RP) <- (R0)
+	RST 20
+;
+SEMIS:
+    LHLD	RPP
+	MOV	C,M	; (BC) <- (R1)
+	INX	H
+	MOV	B,M
+	INX	H
+	SHLD	RPP	; (RP) <- (RP) + 2
+	RST 20
+
+TOR:
+
+    POP	D	; (DE) <- (S1)
+	LHLD	RPP
+	DCX	H	; (RP) <- (RP) - 2
+	DCX	H
+	SHLD	RPP
+	MOV	M,E	; ((HL)) <- (DE)
+	INX	H
+	MOV	M,D
+	RST 20
+;
+FROMR:
+
+    LHLD	RPP
+	MOV	E,M	; (DE) <- (R1)
+	INX	H
+	MOV	D,M
+	INX	H
+	SHLD	RPP	; (RP) <- (RP) + 2
+	PUSH	D	; (S1) <- (DE)
+	RST 20
+;
+
+ZEQU:
+	POP	H	; (HL) <- (S1)
+	MOV	A,L
+	ORA	H	; IF (HL) = 0
+	LXI	H,0	; THEN (HL) <- FALSE
+	JNZ	ZEQU1
+	INX	H	; ELSE (HL) <- TRUE
+ZEQU1:	
+    RST 18	; (S1) <- (HL)
+;
+
+ZLESS:
+	POP	H	; (HL) <- (S1)
+	DAD	H	; IF (HL) >= 0
+	LXI	H,0	; THEN (HL) <- FALSE
+	JNC	ZLES1
+	INX	H	; ELSE (HL) <- TRUE
+ZLES1:	RST 18	; (S1) <- (HL)
+;
+
+PLUS:
+
+;(S1) <- (S1) + (S2)
+	POP	D
+	POP	H
+	DAD	D
+	RST 18
+;
+MINUS:
+
+    POP	H
+	MOV	A,L
+	CMA
+	MOV	L,A
+	MOV	A,H
+	CMA
+	MOV	H,A
+	INX	H
+	RST 18
+;
+
+OVER:
+	POP	D
+	POP	H
+	PUSH	H
+	RST 10
+;
+	
+DROP:
+	POP	H
+	RST 20
+;
+	
+SWAP:
+	POP	H
+	XTHL
+	RST 18
+;
+	
+DUP:
+	POP	H
+	PUSH	H
+	RST 18
+	
+	POP	H	; (HL) <- ADDR
+	MOV	E,M	; (DE) <- (ADDR)
+	INX	H
+	MOV	D,M
+	PUSH	D	; (S1) <- (DE)
+	RST 20
+;
+
+CAT:            ;(S1) <- ((S1))LB
+	POP	H	; (HL) <- ADDR
+	MOV	L,M	; (HL) <- (ADDR)LB
+	MVI	H,0
+	RST 18
+;
+
+STORE:		;((S1)) <- (S2)
+	POP	H	; (HL) <- (S1) = ADDR
+	POP	D	; (DE) <- (S2) = VALUE
+	MOV	M,E	; ((HL)) <- (DE)
+	INX	H
+	MOV	M,D
+	RST 20
+;
+
+CSTOR:		;((S1))LB <- (S2)LB
+	POP	H	; (HL) <- (S1) = ADDR
+	POP	D	; (DE) <- (S2) = BYTE
+	MOV	M,E	; ((HL))LB <- (E)
+	RST 20
+;
+
+;
+	
