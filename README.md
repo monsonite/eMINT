@@ -1,3 +1,11 @@
+eMINT is an attempt to capture the philosopy of Dr. C.H. Ting's eForth model, but in a smaller package.
+
+The earlier MINT primitives have a very close resemblence to those documented in the 1979 FIG-Forth for the 8080, which pleased me, because they had been written in a clean room environment, before seeing the FIG listing.
+
+The 8080 code was converted to Z80 mnemonics and absolute jumps were replaced with relative jumps - and thus fewer bytes. The 8080 did not have relative jump instructions.  Full use is made of the RST instructions - also to keep the code compact.
+
+eMINT is a work in progress
+
 ### <a name='list-of-MINT-operators'></a>List of MINT operators
 
 | Symbol | Description                               | Effect       |	Symbol | Description                               | Effect       |
