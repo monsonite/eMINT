@@ -1,0 +1,578 @@
+0000                          .ORG   $00   
+0000                             ; 
+0000                             ;	RELEASE & VERSION NUMBERS
+0000                             ; 
+0000                FIGREL:   EQU   1   ; FIG RELEASE #
+0000                FIGREV:   EQU   1   ; FIG REVISION #
+0000                USRVER:   EQU   0   ; USER VERSION #
+0000                             ; 
+0000                             ;	ASCII CHARACTERS USED
+0000                             ; 
+0000                ABL:      EQU   20H   ; SPACE
+0000                ACR:      EQU   0DH   ; CARRIAGE RETURN
+0000                ADOT:     EQU   02EH   ; PERIOD
+0000                BELL:     EQU   07H   ; (^G)
+0000                BSIN:     EQU   7FH   ; INPUT BACKSPACE CHR = RUBOUT
+0000                BSOUT:    EQU   08H   ; OUTPUT BACKSPACE (^H)
+0000                DLE:      EQU   10H   ; (^P)
+0000                LF:       EQU   0AH   ; LINE FEED
+0000                FF:       EQU   0CH   ; FORM FEED (^L)
+0000                             ; 
+0000                             ;	MEMORY ALLOCATION
+0000                             ; 
+0000                EM:       EQU   4000H   ; TOP OF MEMORY + 1 = LIMIT
+0000                NSCR:     EQU   1   ; NUMBER OF 1024 BYTE SCREENS
+0000                KBBUF:    EQU   128   ; DATA BYTES PER DISK BUFFER
+0000                US:       EQU   40H   ; USER VARIABLES SPACE
+0000                RTS:      EQU   0A0H   ; RETURN STACK & TERM BUFF SPACE
+0000                             ; 
+0000                CO:       EQU   KBBUF+4   ; DISK BUFFER + 2 HEADER + 2 TAIL
+0000                NBUF:     EQU   NSCR*400H/KBBUF   ; NUMBER OF BUFFERS
+0000                BUF1:     EQU   EM-CO*NBUF   ; ADDR FIRST DISK BUFFER
+0000                INITR0:   EQU   BUF1-US   ; (R0)
+0000                INITS0:   EQU   INITR0-RTS   ; (S0)
+0000                             ; 
+0000   00 3B                  DW   INITS0   ; INIT (S0)
+0002   A0 3B                  DW   INITR0   ; INIT (R0)
+0004                             ; 
+0004   A0 3B        UP:       DW   INITR0   ; USER AREA POINTER
+0006   A0 3B        RPP:      DW   INITR0   ; RETURN STACK POINTER
+0008                             ; 
+0008                             ; 
+0008                UPDATEPAGE:   =   1200h   ; code to do ld (hl),x goes here+misc
+0008                             ;	MUST BE IN SAME ORDER AS USER VARIABLES
+0008                             ; 
+0008                             ; 
+0008                             ; 
+0008                             ; 
+0008                             ; 
+0008                             ; 
+0008                             ; 
+0008                             ; 
+0008                             ; 
+0008                             ; 
+0008                EXEC:        
+0008   E1                     POP   HL   ; (3t)	(HL) <- (S1) = CFA
+0009   5E                     LD   E,(HL)   ; (2t)	(PC) <- ((W))
+000A   23                     INC   HL   ; (1t)
+000B   56                     LD   D,(HL)   ; (2t)
+000C   EB                     EX   DE,HL   ; (1t)
+000D   E9                     JP   (HL)   ; (3t)  NOTE: (DE) = CFA+1
+000E                             ; 
+000E                             ; 
+000E                             ; 
+000E                             ; 
+000E                             ; 
+000E                BRAN1:       
+000E   60                     LD   H,B   ; (1t)	(HL) <- (IP)
+000F   69                     LD   L,C   ; (1t)
+0010   5E                     LD   E,(HL)   ; (2t)	(DE) <- ((IP)) = BRANCH OFFSET
+0011   23                     INC   HL   ; (1t)
+0012   56                     LD   D,(HL)   ; (2t)
+0013   2B                     DEC   HL   ; (1t)
+0014   19                     ADD   HL,DE   ; (1t)		(HL) <- (HL) + ((IP))
+0015   4D                     LD   C,L   ; (1t)		(IP) <- (HL)
+0016   44                     LD   B,H   ; (1t)
+0017   18 7A                  JR   NEXT   ; (3t)
+0019                             ; 
+0019                ZBRAN:       
+0019   E1                     POP   HL   ; (3t)
+001A   7D                     LD   A,L   ; (1t)
+001B   B4                     OR   H   ; (1t)
+001C   28 F0                  JR   Z,BRAN1   ; (3t)		IF (S1)=0 THEN BRANCH
+001E   03                     INC   BC   ; (1t)		ELSE SKIP BRANCH OFFSET
+001F   03                     INC   BC   ; (1t)
+0020   18 71                  JR   NEXT   ; (3t)
+0022                             ; 
+0022                LIT:         
+0022   0A                     LD   A,(BC)   ; (2t)	(HL) <- ((IP)) = LITERAL
+0023   03                     INC   BC   ; (1t)	(IP) <- (IP) + 2
+0024   6F                     LD   L,A   ; (1t)		LB
+0025   0A                     LD   A,(BC)   ; (2t)		HB
+0026   03                     INC   BC   ; (1t)
+0027   67                     LD   H,A   ; (1t)
+0028   18 68                  JR   HPUSH   ; (3t) 	(S1) <- (HL)
+002A                             ; 
+002A                             ; 
+002A                             ; 
+002A                             ; 
+002A                SPSTO:       
+002A                             ; 
+002A   2A 04 00               LD   HL,(UP)   ; (5t)	(HL) <- USER VAR BASE ADDR
+002D   11 06 00               LD   DE,6   ; (2t)
+0030   19                     ADD   HL,DE   ; (1t)	(HL) <- S0
+0031   5E                     LD   E,(HL)   ; (2t)	(DE) <- (S0)
+0032   23                     INC   HL   ; (1t)
+0033   56                     LD   D,(HL)   ; (2t)
+0034   EB                     EX   DE,HL   ; (1t)	
+0035   F9                     LD   SP,HL   ; (1t)	(SP) <- (S0)
+0036   18 5B                  JR   NEXT   ; (3t)
+0038                             ; 
+0038                             ; 
+0038                RPAT:        
+0038   2A 06 00               LD   HL,(RPP)   ; (5t)(HL) <- USER VAR BASE ADDR
+003B   18 55                  JR   HPUSH   ; (3t)
+003D                             ; 
+003D                             ; 
+003D                RPSTO:       
+003D                             ; 
+003D   2A 04 00               LD   HL,(UP)   ; (5t)	(HL) <- USER VARIABLE BASE ADDR
+0040   11 08 00               LD   DE,8   ; (2t)
+0043   19                     ADD   HL,DE   ; (1t)	(HL) <- R0
+0044   5E                     LD   E,(HL)   ; (2t)	(DE) <- (R0)
+0045   23                     INC   HL   ; (1t)
+0046   56                     LD   D,(HL)   ; (2t)
+0047   EB                     EX   DE,HL   ; (1t)
+0048   22 06 00               LD   (RPP),HL   ; (5t)	(RP) <- (R0)
+004B   18 46                  JR   NEXT   ; (3t)
+004D                             ; 
+004D                             ; 
+004D                CSTOR:       ;((S1))LB <- (S2)LB
+004D   E1                     POP   HL   ; (3t) (HL) <- (S1) = ADDR
+004E   D1                     POP   DE   ; (3t) (DE) <- (S2) = BYTE
+004F   73                     LD   (HL),E   ; (2t) ((HL))LB <- (E)
+0050   18 41                  JR   NEXT   ; (3t)     
+0052                             ; 
+0052                SEMIS:       
+0052   2A 06 00               LD   HL,(RPP)   ; (5t)
+0055   4E                     LD   C,(HL)   ; (2t)	(BC) <- (R1)
+0056   23                     INC   HL   ; (1t)
+0057   46                     LD   B,(HL)   ; (2t)
+0058   23                     INC   HL   ; (1t)
+0059   22 06 00               LD   (RPP),HL   ; (5t)	(RP) <- (RP) + 2
+005C   18 35                  JR   NEXT   ; (3t)
+005E                             ; 
+005E                TOR:         
+005E                             ; 
+005E   D1                     POP   DE   ; (3t) (DE) <- (S1)
+005F   2A 06 00               LD   HL,(RPP)   ; (5t)
+0062   2B                     DEC   HL   ; (1t) (RP) <- (RP) - 2
+0063   2B                     DEC   HL   ; (1t)
+0064   22 06 00               LD   (RPP),HL   ; (5t)	 	
+0067   73                     LD   (HL),E   ; (2t)	((HL)) <- (DE)
+0068   23                     INC   HL   ; (1t)
+0069   72                     LD   (HL),D   ; (2t)
+006A   18 27                  JR   NEXT   ; (3t)
+006C                             ; 
+006C                FROMR:       
+006C                             ; 
+006C   2A 06 00               LD   HL,(RPP)   ; (5t)		
+006F   5E                     LD   E,(HL)   ; (2t)	(DE) <- (R1)
+0070   23                     INC   HL   ; (1t)
+0071   56                     LD   D,(HL)   ; (2t)
+0072   23                     INC   HL   ; (1t)
+0073   22 06 00               LD   (RPP),HL   ; (5t)	(RP) <- (RP) + 2
+0076   D5                     PUSH   DE   ; (3t)	(S1) <- (DE)
+0077   18 1A                  JR   NEXT   ; (3t)
+0079                             ; 
+0079                             ; 
+0079                             ; 
+0079                ZEQU:        
+0079   E1                     POP   HL   ; (3t)	(HL) <- (S1)
+007A   7D                     LD   A,L   ; (1t)
+007B   B4                     OR   H   ; (1t)	IF (HL) = 0
+007C   21 00 00               LD   HL,0   ; (3t)	THEN (HL) <- FALSE
+007F   20 01                  JR   NZ,ZEQU1   ; (3t)
+0081   23                     INC   HL   ; (1t)	ELSE (HL) <- TRUE
+0082                ZEQU1:       
+0082   18 0E                  JR   HPUSH   ; (3t)	(S1) <- (HL)
+0084                             ; 
+0084                             ; 
+0084                ZLESS:       
+0084   E1                     POP   HL   ; (3t)	(HL) <- (S1)
+0085   19                     ADD   HL,DE   ; (1t)	IF (HL) >= 0
+0086   21 00 00               LD   HL,0   ; (3t)	THEN (HL) <- FALSE
+0089   30 01                  JR   NC,ZLES1   ; (3t)
+008B   23                     INC   HL   ; (1t)	ELSE (HL) <- TRUE
+008C                ZLES1:       
+008C   18 04                  JR   HPUSH   ; (3t)	(S1) <- (HL)
+008E                             ; 
+008E                             ; 
+008E                             ; 
+008E                OVER:        
+008E   D1                     POP   DE   ; (3t) 	10t
+008F   E1                     POP   HL   ; (3t) 	10t
+0090   E5                     PUSH   HL   ; (3t) 	11t
+0091                             ; 
+0091                             ; (9t)	31t	
+0091                             ; 
+0091                             ; 
+0091   D5           DPUSH:    PUSH   DE   ; (3t)
+0092   E5           HPUSH:    PUSH   HL   ; (3t)	
+0093                             ; 
+0093                             ; 
+0093                             ; *********************************************************************************
+0093                             ; 
+0093                NEXT:        ; 9 
+0093   03                     INC   BC   ; (1t)	6t    Increment the IP
+0094   0A                     LD   A,(BC)   ; (2t)	7t    Get the next character and dispatch
+0095   6F                     LD   L,A   ; (1t)	4t    Index into table
+0096   26 01                  LD   H,01h   ; (2t)	7t    Start address of jump table         
+0098   6E                     LD   L,(HL)   ; (2t)	7t    get low jump address
+0099   26 04                  LD   H,04h   ; (2t)	7t    Load H with the 1st page address       
+009B   E9                     JP   (HL)   ; (3t)	4t    Jump to routine
+009C                             ; (13t) 42t
+009C                             ; 
+009C                             ; ********************************************************************************* 
+009C                SPAT:        
+009C                             ; 
+009C   21 00 00               LD   HL,0   ; (2t)
+009F   39                     ADD   HL,SP   ; (1t)	(HL) <- (SP)
+00A0   18 F0                  JR   HPUSH   ; (3t)  (S1) <- (HL)
+00A2                             ;     
+00A2                             ; 
+00A2                             ; 
+00A2                             ; ********************************************************************************* 
+00A2                             ; 
+00A2                             ; 
+00A2                PLUS:        
+00A2   D1                     POP   DE   ; (3t)	(S1) <- (S1) + (S2)
+00A3   E1                     POP   HL   ; (3t)
+00A4   19                     ADD   HL,DE   ; (1t)
+00A5   18 EB                  JR   HPUSH   ; (3t)
+00A7                             ; 
+00A7                             ; 
+00A7   21 00 00     NEG_:     LD   HL,0   ; (3t)	10t NEGate the value on top of stack (2's complement)
+00AA   D1                     POP   DE   ; (3t)	10t
+00AB   18 02                  JR   sub_2   ; (2t)	use the SUBtract routine
+00AD                             ; 
+00AD                SUB_:        
+00AD                             ; 
+00AD   D1                     POP   DE   ; (3t) 	10t
+00AE   E1           SUB_1:    POP   HL   ; (3t) 	10t  Entry point for INVert
+00AF   A7           SUB_2:    AND   A   ; (1t)  4t  Entry point for NEGate
+00B0   ED 52                  SBC   HL,DE   ; (2t)	15t
+00B2   E5                     PUSH   HL   ; (3t)	11t
+00B3   18 DD                  JR   HPUSH   ; (3t)	11t
+00B5                             ; (15t) 61t
+00B5                             ; 
+00B5                             ; 
+00B5                             ; 
+00B5                             ; 
+00B5                             ; 
+00B5                             ; 
+00B5                DROP:        
+00B5   E1                     POP   HL   ; (3t) 	 10t
+00B6   18 DB                  JR   NEXT   ; (3t)	 11t
+00B8                             ; (6t)	 21t
+00B8                             ; 
+00B8                SWAP:        
+00B8   E1                     POP   HL   ; (3t) 	 10t
+00B9   E3                     EX   (SP),HL   ; (5t)	 19t
+00BA   18 D6                  JR   HPUSH   ; (3t)	 11t
+00BC                             ; (11t)	 40t	 
+00BC                             ; 
+00BC                DUP:         
+00BC   E1                     POP   HL   ; (3t)
+00BD   E5                     PUSH   HL   ; (3t)
+00BE   18 D2                  JR   HPUSH   ; (3t)
+00C0                             ; (9t)
+00C0                             ; 
+00C0                AT:          
+00C0   E1                     POP   HL   ; (3t) (HL) <- ADDR
+00C1   5E                     LD   E,(HL)   ; (2t) (DE) <- (ADDR)
+00C2   23                     INC   HL   ; (1t)
+00C3   56                     LD   D,(HL)   ; (2t)
+00C4   D5                     PUSH   DE   ; (3t) (S1) <- (DE)
+00C5   18 CC                  JR   NEXT   ; (3t)
+00C7                             ; (14t)
+00C7                             ; 
+00C7                CAT:         ;(S1) <- ((S1))LB
+00C7   E1                     POP   HL   ; (3t)(HL) <- ADDR
+00C8   6E                     LD   L,(HL)   ; (2t)(HL) <- (ADDR)LB
+00C9   AF                     XOR   A   ; (1t)
+00CA   67                     LD   H,A   ; (1t)
+00CB   18 C5                  JR   HPUSH   ; (3t)
+00CD                             ; 
+00CD                             ; 
+00CD                STORE:       ;((S1)) <- (S2)
+00CD   E1                     POP   HL   ; (3t) (HL) <- (S1) = ADDR
+00CE   D1                     POP   DE   ; (3t) (DE) <- (S2) = VALUE
+00CF   73                     LD   (HL),E   ; (2t)((HL)) <- (DE)
+00D0   23                     INC   HL   ; (1t)
+00D1   72                     LD   (HL),D   ; (2t)
+00D2   18 BF                  JR   NEXT   ; (3t)
+00D4                             ; 
+00D4                             ; 
+00D4                             ; 
+00D4                AND_:        
+00D4   D1                     POP   DE   ; (3t)Pop DE and HL for logic ops
+00D5   E1                     POP   HL   ; (3t)
+00D6   7B                     LD   A,E   ; (1t)
+00D7   A5                     AND   L   ; (1t) 	4t
+00D8   6F                     LD   L,A   ; (1t) 	4t
+00D9   7A                     LD   A,D   ; (1t) 	4t
+00DA   A4                     AND   H   ; (1t) 	4t
+00DB                AND1:        
+00DB   67                     LD   H,A   ; (1t) 	4t
+00DC   18 B4                  JR   HPUSH   ; (3t)	11t
+00DE                             ; 
+00DE                             ; (15t) 42t
+00DE                OR_:         
+00DE   D1                     POP   DE   ; (3t)Pop DE and HL for logic ops
+00DF   E1                     POP   HL   ; (3t)
+00E0   7B                     LD   A,E   ; (1t)
+00E1   B5                     OR   L   ; (1t) 	4t
+00E2   6F                     LD   L,A   ; (1t) 	4t
+00E3   7A                     LD   A,D   ; (1t) 	4t
+00E4   B4                     OR   H   ; (1t) 	4t
+00E5   67                     LD   H,A   ; (1t) 	4t
+00E6   18 AA                  JR   HPUSH   ; (3t)	11t
+00E8                             ; 
+00E8                XOR_:        
+00E8   D1                     POP   DE   ; Bitwise XOR the top 2 elements of the stack
+00E9                XOR1:        
+00E9   E1                     POP   HL   
+00EA   7B                     LD   A,E   
+00EB   AD                     XOR   L   
+00EC   6F                     LD   L,A   
+00ED   7A                     LD   A,D   
+00EE   AC                     XOR   H   
+00EF   67                     LD   H,A   ; (1t) 	4t
+00F0   18 A0                  JR   HPUSH   ; (3t)	11t
+00F2                             ; 
+00F2                             ; 
+00F2                             ; 
+00F2                INV_:        ; Bitwise INVert the top member of the stack
+00F2   11 FF FF               LD   DE,$FFFF   ; (3t) by xoring with $FFFF
+00F5   18 F2                  JR   xor1   ; (3t) 
+00F7                             ; 
+00F7   E1           EQ_:      POP   HL   ; (3t)
+00F8   D1                     POP   DE   ; (3t)
+00F9   A7                     AND   A   ; (1t) reset the carry flag
+00FA   ED 52                  SBC   HL,DE   ; (2t) only equality sets HL=0 here
+00FC   28 14                  JR   Z,equal   ; (3t)
+00FE   ED 62                  SBC   HL,HL   ; (2t) 
+0100   18 90        HP:       JR   HPUSH   ; (3t) HL = 1    
+0102                             ; 
+0102                             ; 
+0102   D1           GT_:      POP   DE   ; (3t)
+0103   E1                     POP   HL   ; (3t)
+0104   18 02                  JR   cmp_   ; (3t)
+0106                             ; 
+0106   E1           LT_:      POP   HL   ; (3t)
+0107   D1                     POP   DE   ; (3t)
+0108   A7           CMP_:     AND   A   ; (1t)	reset the carry flag
+0109   ED 52                  SBC   HL,DE   ; (2t)	only equality sets HL=0 here
+010B   28 06                  JR   Z,less   ; (3t) 	equality returns 0  KB 25/11/21
+010D   ED 62                  SBC   HL,HL   ; (2t)  HL = 0
+010F   FA 13 01               JP   M,less   ; (3t)
+0112   2C           EQUAL:    INC   L   ; (1t) 	HL = 1    
+0113                LESS:        
+0113   18 EB                  JR   HP   ; (3t) PUSH HL and drop into NEXT
+0115                             ; 
+0115                             ; 
+0115                             ; 
+0115                             ;        
+0115                             ; 
+0115                             ; ******************************************************************************
+0115                             ; ******************************************************************************
+0115                             ; 
+0115                             ;									if <expr><compare><expr>
+0115                             ; 
+0115                             ; ******************************************************************************
+0115                             ; ******************************************************************************
+0115                             ; 
+0115                COMMAND_IF:      
+0115   FF                     RST   038h   ; evaluate left expression into B
+0116   D7                     RST   10h   ; get comparison character.
+0117   0E FF                  LD   c,-1   ; C will be -1,0,1 depending on character
+0119   FE 3C                  CP   "<"   
+011B   28 08                  JR   z,fCI_FoundCompare   
+011D   0C                     INC   c   
+011E   FE 3D                  CP   "="   
+0120   28 03                  JR   z,fCI_FoundCompare   
+0122   0C                     INC   c   
+0123   FE 3E                  CP   ">"   
+0125                             ; 
+0125                             ; 
+0125                FCI_FOUNDCOMPARE:      ; B left expr C -1 0 1 for < = >
+0125   54                     LD   d,h   ; save HL in DE
+0126   5D                     LD   e,l   
+0127   26 12                  LD   h,UpdatePage/256   ; set HL to point to write area
+0129   6C                     LD   l,h   
+012A   71                     LD   (hl),c   ; save comparator
+012B   2C                     INC   l   
+012C   70                     LD   (hl),b   ; save LHExpr
+012D   62                     LD   h,d   ; copy DE to HL
+012E   6B                     LD   l,e   
+012F   FF                     RST   038h   ; get the right hand side.
+0130                             ; 
+0130   54                     LD   d,h   ; save HL in DE
+0131   5D                     LD   e,l   
+0132   26 12                  LD   h,UpdatePage/256   ; set HL to point to write area
+0134   6C                     LD   l,h   
+0135   4E                     LD   c,(hl)   ; read comparator into C
+0136   2C                     INC   l   
+0137   7E                     LD   a,(hl)   ; read left
+0138   90                     SUB   b   ; subtract right
+0139   28 05                  JR   z,fCI_TestOver   ; if equal, if comparator zero its okay.
+013B   0D                     DEC   c   
+013C   30 02                  JR   nc,fCI_TestOver   
+013E   0C                     INC   c   
+013F   0C                     INC   c   
+0140                FCI_TESTOVER:      ; DE is code, if C is zero test passed.
+0140   6B                     LD   l,e   ; put DE into HL
+0141   62                     LD   h,d   
+0142   79                     LD   a,c   ; check if test passed.
+0143   B7                     OR   a   
+0144   28 00                  JR   z,Command_Exe_z   ; if so, then execute the command
+0146                             ; 
+0146                             ; 
+0146                             ; fCI_EndLine:
+0146                             ;		ld 	a,(hl) 						; else skip to end of line.
+0146                             ;		or 	a
+0146                             ;		jr z, Command_Exe_z
+0146                             ;		inc l
+0146                             ;		jp 	fCI_EndLine
+0146                             ; 
+0146                             ; 
+0146                COMMAND_EXE_Z:      
+0146                             ; 
+0146   F7                     RST   30h   
+0147                             ; 
+0147                             ; 
+0147                             ; 
+0147                             ; 
+0147                             ; 
+
+
+FIGREL:             0001 DEFINED AT LINE 5
+FIGREV:             0001 DEFINED AT LINE 6
+USRVER:             0000 DEFINED AT LINE 7
+ABL:                0020 DEFINED AT LINE 11
+ACR:                000D DEFINED AT LINE 12
+ADOT:               002E DEFINED AT LINE 13
+BELL:               0007 DEFINED AT LINE 14
+BSIN:               007F DEFINED AT LINE 15
+BSOUT:              0008 DEFINED AT LINE 16
+DLE:                0010 DEFINED AT LINE 17
+LF:                 000A DEFINED AT LINE 18
+FF:                 000C DEFINED AT LINE 19
+EM:                 4000 DEFINED AT LINE 23
+                    > USED AT LINE 31
+NSCR:               0001 DEFINED AT LINE 24
+                    > USED AT LINE 30
+KBBUF:              0080 DEFINED AT LINE 25
+                    > USED AT LINE 29
+                    > USED AT LINE 30
+US:                 0040 DEFINED AT LINE 26
+                    > USED AT LINE 32
+RTS:                00A0 DEFINED AT LINE 27
+                    > USED AT LINE 33
+CO:                 0084 DEFINED AT LINE 29
+                    > USED AT LINE 31
+NBUF:               0008 DEFINED AT LINE 30
+                    > USED AT LINE 31
+BUF1:               3BE0 DEFINED AT LINE 31
+                    > USED AT LINE 32
+INITR0:             3BA0 DEFINED AT LINE 32
+                    > USED AT LINE 33
+                    > USED AT LINE 36
+                    > USED AT LINE 38
+                    > USED AT LINE 39
+INITS0:             3B00 DEFINED AT LINE 33
+                    > USED AT LINE 35
+UP:                 0004 DEFINED AT LINE 38
+                    > USED AT LINE 101
+                    > USED AT LINE 119
+RPP:                0006 DEFINED AT LINE 39
+                    > USED AT LINE 113
+                    > USED AT LINE 126
+                    > USED AT LINE 137
+                    > USED AT LINE 142
+                    > USED AT LINE 148
+                    > USED AT LINE 151
+                    > USED AT LINE 159
+                    > USED AT LINE 164
+UPDATEPAGE:         1200 DEFINED AT LINE 42
+                    > USED AT LINE 392
+                    > USED AT LINE 403
+EXEC:               0008 DEFINED AT LINE 54
+BRAN1:              000E DEFINED AT LINE 66
+                    > USED AT LINE 82
+ZBRAN:              0019 DEFINED AT LINE 78
+LIT:                0022 DEFINED AT LINE 87
+SPSTO:              002A DEFINED AT LINE 99
+RPAT:               0038 DEFINED AT LINE 112
+RPSTO:              003D DEFINED AT LINE 117
+CSTOR:              004D DEFINED AT LINE 130
+SEMIS:              0052 DEFINED AT LINE 136
+TOR:                005E DEFINED AT LINE 145
+FROMR:              006C DEFINED AT LINE 157
+ZEQU:               0079 DEFINED AT LINE 170
+ZEQU1:              0082 DEFINED AT LINE 177
+                    > USED AT LINE 175
+ZLESS:              0084 DEFINED AT LINE 181
+ZLES1:              008C DEFINED AT LINE 187
+                    > USED AT LINE 185
+OVER:               008E DEFINED AT LINE 192
+DPUSH:              0091 DEFINED AT LINE 200
+HPUSH:              0092 DEFINED AT LINE 201
+                    > USED AT LINE 94
+                    > USED AT LINE 114
+                    > USED AT LINE 178
+                    > USED AT LINE 188
+                    > USED AT LINE 221
+                    > USED AT LINE 232
+                    > USED AT LINE 246
+                    > USED AT LINE 262
+                    > USED AT LINE 268
+                    > USED AT LINE 285
+                    > USED AT LINE 308
+                    > USED AT LINE 320
+                    > USED AT LINE 332
+                    > USED AT LINE 346
+NEXT:               0093 DEFINED AT LINE 206
+                    > USED AT LINE 76
+                    > USED AT LINE 85
+                    > USED AT LINE 109
+                    > USED AT LINE 127
+                    > USED AT LINE 134
+                    > USED AT LINE 143
+                    > USED AT LINE 155
+                    > USED AT LINE 166
+                    > USED AT LINE 256
+                    > USED AT LINE 277
+                    > USED AT LINE 294
+SPAT:               009C DEFINED AT LINE 217
+PLUS:               00A2 DEFINED AT LINE 228
+NEG_:               00A7 DEFINED AT LINE 235
+SUB_:               00AD DEFINED AT LINE 239
+SUB_1:              00AE DEFINED AT LINE 242
+SUB_2:              00AF DEFINED AT LINE 243
+                    > USED AT LINE 237
+DROP:               00B5 DEFINED AT LINE 254
+SWAP:               00B8 DEFINED AT LINE 259
+DUP:                00BC DEFINED AT LINE 265
+AT:                 00C0 DEFINED AT LINE 271
+CAT:                00C7 DEFINED AT LINE 280
+STORE:              00CD DEFINED AT LINE 288
+AND_:               00D4 DEFINED AT LINE 298
+AND1:               00DB DEFINED AT LINE 306
+OR_:                00DE DEFINED AT LINE 311
+XOR_:               00E8 DEFINED AT LINE 322
+XOR1:               00E9 DEFINED AT LINE 324
+                    > USED AT LINE 338
+INV_:               00F2 DEFINED AT LINE 336
+EQ_:                00F7 DEFINED AT LINE 340
+HP:                 0100 DEFINED AT LINE 346
+                    > USED AT LINE 362
+GT_:                0102 DEFINED AT LINE 349
+LT_:                0106 DEFINED AT LINE 353
+CMP_:               0108 DEFINED AT LINE 355
+                    > USED AT LINE 351
+EQUAL:              0112 DEFINED AT LINE 360
+                    > USED AT LINE 344
+LESS:               0113 DEFINED AT LINE 361
+                    > USED AT LINE 357
+                    > USED AT LINE 359
+COMMAND_IF:         0115 DEFINED AT LINE 376
+FCI_FOUNDCOMPARE:   0125 DEFINED AT LINE 389
+                    > USED AT LINE 381
+                    > USED AT LINE 384
+FCI_TESTOVER:       0140 DEFINED AT LINE 414
+                    > USED AT LINE 409
+                    > USED AT LINE 411
+COMMAND_EXE_Z:      0146 DEFINED AT LINE 430
+                    > USED AT LINE 419
